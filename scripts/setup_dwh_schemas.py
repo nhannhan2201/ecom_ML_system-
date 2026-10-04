@@ -32,6 +32,9 @@ import psycopg2.extras
 import pyarrow.dataset as ds
 from pyarrow.fs import S3FileSystem
 
+from dotenv import load_dotenv
+load_dotenv()
+
 # Cấu hình kết nối từ biến môi trường
 PG_HOST = os.getenv("POSTGRES_DWH_HOST", "localhost")
 PG_PORT = int(os.getenv("POSTGRES_DWH_PORT", "5432"))
@@ -40,12 +43,8 @@ PG_PASS = os.getenv("POSTGRES_DWH_PASSWORD", "postgres")
 PG_DB = os.getenv("POSTGRES_DWH_DB", "ecom_dwh")
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
-if not MINIO_ACCESS_KEY:
-    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-if not MINIO_SECRET_KEY:
-    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
 
 def get_connection():
@@ -204,11 +203,14 @@ def create_schemas_and_tables(conn):
 
 # ==============================================================================
 # BƯỚC 2: NẠP DỮ LIỆU TỪ MINIO LAKEHOUSE VÀO POSTGRESQL
-# ==============================================================================
 def load_table_from_minio(conn, s3, lakehouse_path, target_table, columns, pk_col=None, limit=None):
-    """Hàm helper đọc Parquet/Delta từ MinIO bằng PyArrow và COPY vào PostgreSQL qua copy_expert có khử trùng lặp PK."""
-    dataset = ds.dataset(lakehouse_path, filesystem=s3, format="parquet", partitioning="hive")
-    scanner = dataset.scanner(columns=columns, batch_size=50000)
+    """Hàm helper đọc Parquet/Delta từ MinIO bằng PyArrow và COPY vào PostgreSQL."""
+    try:
+        dataset = ds.dataset(lakehouse_path, filesystem=s3, format="parquet", partitioning="hive")
+        scanner = dataset.scanner(columns=columns, batch_size=50000)
+    except Exception as e:
+        print(f" -> [SKIP] Bảng {lakehouse_path} chưa có trên MinIO: {e}")
+        return 0
 
     total = 0
     seen_pks = set() if pk_col else None
@@ -522,13 +524,19 @@ def benchmark_dwh_indexing(conn):
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Setup DWH schemas, tables, and optionally sync data.")
+    parser.add_argument("--schema-only", action="store_true", help="Only create schemas and tables without syncing from MinIO")
+    args, _ = parser.parse_known_args()
+
     conn = get_connection()
     try:
         create_schemas_and_tables(conn)
-        sync_data_from_lakehouse(conn)
-        benchmark_dwh_indexing(conn)
+        if not args.schema_only:
+            sync_data_from_lakehouse(conn)
+            benchmark_dwh_indexing(conn)
         print("\n" + "=" * 80)
-        print(" [OK] HOAN THANH THIET LAP DATA WAREHOUSE VA BENCHMARK INDEXING!")
+        print(" [OK] HOAN THANH THIET LAP DATA WAREHOUSE!")
         print("=" * 80)
         print(" THONG TIN KET NOI DBEAVER:")
         print("    - Host     : localhost")

@@ -1,0 +1,30 @@
+================================================================================
+END-TO-END PIPELINE REHEARSAL LOG (SMALL MODE)
+================================================================================
+Execution Timestamp : 2026-10-04 05:39:19 UTC
+Target Mode         : small (10,200 source events)
+Repository Root     : /home/nhan/Projects/ecom_ML_system
+================================================================================
+Step Name                                  | Duration   | Status
+--------------------------------------------------------------------------------
+Check Services Health                      |    0.26s   | [PASS]
+Initialize MinIO Buckets                   |    0.73s   | [PASS]
+Initialize DWH Schemas                     |    2.02s   | [PASS]
+Initialize Airflow Connections             |    4.23s   | [PASS]
+Generate Small Batch Data                  |   48.51s   | [PASS]
+Profile Generated Data                     |   13.56s   | [PASS]
+Spark DP1: Bronze Lakehouse Ingestion      |   59.47s   | [PASS]
+Spark DP2: Silver & Gold DWH Ingestion     |  268.72s   | [PASS]
+Spark DP3: Features & Labels Computation   |  120.56s   | [PASS]
+Sync DWH from Lakehouse & Benchmark Indexing |  263.82s   | [PASS]
+Trigger Airflow DP1 Pipeline               |    6.68s   | [PASS]
+Trigger Airflow DP4 Feast Materialize      |    5.46s   | [PASS]
+DataHub Metadata Sync                      |    6.45s   | [PASS]
+DataHub Contract Verification              |    7.77s   | [PASS]
+Feast Apply Definitions                    |   17.60s   | [PASS]
+Feast Materialize                          |   13.86s   | [PASS]
+Feast Online Serving Benchmark             |   12.43s   | [PASS]
+--------------------------------------------------------------------------------
+TOTAL REHEARSAL DURATION: 852.13s
+OVERALL REHEARSAL RESULT: ALL 17 STEPS PASSED SUCCESSFULLY
+================================================================================

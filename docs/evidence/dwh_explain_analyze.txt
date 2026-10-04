@@ -1,3 +1,4 @@
+Connecting to PostgreSQL DWH at localhost:5432/ecom_dwh...
 ================================================================================
 POSTGRESQL DWH EXPLAIN (ANALYZE, BUFFERS) BENCHMARK REPORT
 Table: gold.fact_user_events (~1.4M rows)
@@ -10,37 +11,43 @@ SELECT event_type, product_sk, price, event_time
         ORDER BY event_time DESC;
 
 --- 1. BASELINE EXECUTION (INDEX SCAN DISABLED: FORCED SEQUENTIAL SCAN) ---
-Gather Merge  (cost=45622.08..45643.08 rows=180 width=52) (actual time=388.694..395.470 rows=355 loops=1)
+Gather Merge  (cost=319684.79..319857.47 rows=1480 width=52) (actual time=866.278..879.603 rows=3550 loops=1)
   Workers Planned: 2
   Workers Launched: 2
-  Buffers: shared hit=72 read=35878
-  ->  Sort  (cost=44622.05..44622.28 rows=90 width=52) (actual time=381.721..381.751 rows=118 loops=3)
+  Buffers: shared hit=900 read=255378
+  ->  Sort  (cost=318684.77..318686.62 rows=740 width=52) (actual time=832.394..832.559 rows=1183 loops=3)
         Sort Key: event_time DESC
-        Sort Method: quicksort  Memory: 37kB
-        Buffers: shared hit=72 read=35878
-        Worker 0:  Sort Method: quicksort  Memory: 32kB
-        Worker 1:  Sort Method: quicksort  Memory: 38kB
-        ->  Parallel Seq Scan on fact_user_events  (cost=0.00..44619.13 rows=90 width=52) (actual time=140.429..381.197 rows=118 loops=3)
+        Sort Method: quicksort  Memory: 154kB
+        Buffers: shared hit=900 read=255378
+        Worker 0:  Sort Method: quicksort  Memory: 113kB
+        Worker 1:  Sort Method: quicksort  Memory: 187kB
+        ->  Parallel Seq Scan on fact_user_events  (cost=0.00..318649.50 rows=740 width=52) (actual time=293.423..830.785 rows=1183 loops=3)
               Filter: ((event_time >= '2019-10-16 04:15:13'::timestamp without time zone) AND (user_id = 513359812))
-              Rows Removed by Filter: 466075
-              Buffers: shared read=35878
+              Rows Removed by Filter: 3329137
+              Buffers: shared hit=828 read=255378
 Planning:
-  Buffers: shared hit=147 read=9
-Planning Time: 2.446 ms
-Execution Time: 395.701 ms
+  Buffers: shared hit=151 read=4
+Planning Time: 2.843 ms
+JIT:
+  Functions: 12
+  Options: Inlining false, Optimization false, Expressions true, Deforming true
+  Timing: Generation 4.861 ms, Inlining 0.000 ms, Optimization 2.518 ms, Emission 48.251 ms, Total 55.630 ms
+Execution Time: 921.579 ms
 
 --- 2. OPTIMIZED EXECUTION (COMPOSITE B-TREE INDEX ENABLED: idx_fact_user_events_user_time) ---
-Sort  (cost=835.70..836.24 rows=217 width=52) (actual time=2.372..2.416 rows=355 loops=1)
+Sort  (cost=6788.07..6792.51 rows=1775 width=52) (actual time=3.166..3.458 rows=3550 loops=1)
   Sort Key: event_time DESC
-  Sort Method: quicksort  Memory: 58kB
-  Buffers: shared hit=3 read=27
-  ->  Bitmap Heap Scan on fact_user_events  (cost=6.65..827.28 rows=217 width=52) (actual time=1.319..2.006 rows=355 loops=1)
+  Sort Method: quicksort  Memory: 429kB
+  Buffers: shared hit=231
+  ->  Bitmap Heap Scan on fact_user_events  (cost=30.63..6692.27 rows=1775 width=52) (actual time=0.366..1.626 rows=3550 loops=1)
         Recheck Cond: ((user_id = 513359812) AND (event_time >= '2019-10-16 04:15:13'::timestamp without time zone))
-        Heap Blocks: exact=22
-        Buffers: shared hit=3 read=27
-        ->  Bitmap Index Scan on idx_fact_user_events_user_time  (cost=0.00..6.60 rows=217 width=0) (actual time=1.269..1.270 rows=355 loops=1)
+        Heap Blocks: exact=221
+        Buffers: shared hit=231
+        ->  Bitmap Index Scan on idx_fact_user_events_user_time  (cost=0.00..30.18 rows=1775 width=0) (actual time=0.301..0.301 rows=3550 loops=1)
               Index Cond: ((user_id = 513359812) AND (event_time >= '2019-10-16 04:15:13'::timestamp without time zone))
-              Buffers: shared hit=3 read=5
-Planning Time: 0.177 ms
-Execution Time: 2.659 ms
+              Buffers: shared hit=10
+Planning Time: 0.114 ms
+Execution Time: 3.830 ms
 ================================================================================
+
+Saved benchmark evidence to docs/evidence/dwh_explain_analyze.txt

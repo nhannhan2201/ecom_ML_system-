@@ -1,19 +1,18 @@
-================================================================================
-BAO CAO TOI UU HOA LUU TRU LAKEHOUSE (LAKEHOUSE STORAGE OPTIMIZATION REPORT)
-================================================================================
-Thoi diem do luong: 2026-10-04 03:37:24 UTC
-Lenh thuc thi     : python3 scripts/optimize_storage.py
-Git commit hash   : 538fcc1
-Bang muc tieu     : s3a://ecommerce-lakehouse/gold/fact_user_events
-User ID kiem tra  : 513359812
---------------------------------------------------------------------------------
-Tieu chi danh gia                | Truoc toi uu (Before)  | Sau toi uu (After)    
---------------------------------------------------------------------------------
-1. So file Parquet hoat dong     | 3 files (phan manh)    | 3 files (da gom)      
-2. Kich thuoc trung binh/file    | 42.05 MB/file          | 42.05 MB/file         
-3. Ky thuat sap xep da chieu     | Chua sap xep           | Z-Order (user_id)     
-4. Co che Data Skipping          | Khong kich hoat        | BAT (Bo qua file khong khop)
-5. Thoi gian query user_id       | 3.011s                 | 1.575s (1.9x)         
-6. Thoi gian chay OPTIMIZE       | -                      | 20.87s                
-7. Che do VACUUM                 | -                      | RETAIN 168h (Safe)    
-================================================================================
+
+=====================================================================================
+ TONG HOP TOAN BO CAC BANG TRONG MINIO DATA LAKEHOUSE
+=====================================================================================
+ Tên bảng (Zone / Name)           |   Số bản ghi |  Số cột | Phân vùng (Partition)
+-------------------------------------------------------------------------------------
+ bronze/raw_events                |    1,020,000 |      11 | Không phân vùng     
+ silver/stg_events                |    4,995,480 |      14 | date                
+ gold/dim_product                 |      826,550 |      10 | Không phân vùng (SCD2)
+ gold/dim_user                    |      869,705 |       8 | Không phân vùng     
+ gold/fact_user_events            |    9,990,960 |      12 | date (01, 16, 26)   
+ gold/feat_user_30d               |    1,230,508 |       9 | date (2019-10-26)   
+ gold/user_labels                 |      830,628 |       4 | date (2019-10-26)   
+ gold/category_summary            | CHƯA TỒN TẠI |       - | Lỗi: ecommerce-lakehouse/gold/category_summary
+-------------------------------------------------------------------------------------
+ [INFO] Tong so ban ghi quan ly trong Lakehouse: 19,763,831 records
+=====================================================================================
+

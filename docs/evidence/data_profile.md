@@ -1,11 +1,11 @@
 # Bao Cao Do Luong Du Lieu Thuc Te (Data Profile Evidence)
 
-> **Thoi diem do luong**: `2026-10-04 03:20:20 UTC`  
+> **Thoi diem do luong**: `2026-10-04 05:40:28 UTC`  
 > **Lenh da chay**: `make profile-data` (`scripts/profile_generated_data.py`)  
-> **Git commit**: `c39009f`  
+> **Git commit**: `91672e2`  
 > **Che do du lieu (Mode)**: `small`  
 > **Tong so dong nguon**: `1,020,000` dong  
-> **Manifest timestamp**: `2026-10-04T03:20:09.888930Z`  
+> **Manifest timestamp**: `2026-10-04T05:40:14.523213+00:00`  
 > **Nguon du lieu goc**: REES46 eCommerce Behavior Data (2019-Oct.csv)  
 > - Part 1: 2019-10-01 den 2019-10-15 (Schema 9 cot)  
 > - Part 2: 2019-10-16 den 2019-10-25 (Schema 10 cot, co discount_percent)  

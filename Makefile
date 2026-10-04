@@ -16,10 +16,10 @@ endif
 
 PYTHON_EXEC ?= python3
 
-.PHONY: help install download-jars up-infra up-flink up-airflow up-datahub down \
-        init-airflow gen-data gen-data-skewed gen-data-full gen-stream \
-        spark-baseline spark-opt flink-baseline flink-opt dwh-setup \
-        governance-sync governance-verify feast-apply test lint docker-size profile-data check-evidence
+.PHONY: help install download-jars up-all down-all up-infra up-flink up-airflow up-datahub down \
+        check reset all-small init-airflow gen-data gen-data-skewed gen-data-medium gen-data-full gen-stream \
+        spark-baseline spark-opt spark-skew flink-baseline flink-opt dwh-setup \
+        governance-sync governance-verify feast-apply test lint docker-size profile-data profile-stream check-evidence
 
 help: ## Show this help message and exit
 	@echo "========================================================================"
@@ -35,6 +35,30 @@ install: ## Install runtime dependencies
 download-jars: ## Download required Apache Flink connectors (Kafka, S3 Hadoop)
 	@echo "--> Downloading Flink connector JARs..."
 	bash scripts/download_flink_jars.sh
+
+up-all: ## Start all services across all 7 compose stacks in order of dependency
+	@echo "--> Starting foundational infrastructure (MinIO, Postgres, Redis, Kafka)..."
+	docker compose -f docker/docker-compose-minio.yml \
+	               -f docker/docker-compose-postgres.yml \
+	               -f docker/docker-compose-redis.yml \
+	               -f docker/docker-compose-kafka.yml up -d
+	@echo "--> Starting Flink cluster..."
+	docker compose -f docker/docker-compose-flink.yml up -d
+	@echo "--> Starting Airflow orchestrator..."
+	docker compose -f docker/docker-compose-airflow.yml up -d
+	@echo "--> Starting DataHub governance stack..."
+	docker compose -f docker/docker-compose-datahub.yml up -d
+	@echo "--> All services launched. Run 'make check' to verify readiness."
+
+down-all: ## Stop all services across all 7 compose stacks in reverse order
+	@echo "--> Stopping all services..."
+	docker compose -f docker/docker-compose-datahub.yml down
+	docker compose -f docker/docker-compose-airflow.yml down
+	docker compose -f docker/docker-compose-flink.yml down
+	docker compose -f docker/docker-compose-kafka.yml \
+	               -f docker/docker-compose-redis.yml \
+	               -f docker/docker-compose-postgres.yml \
+	               -f docker/docker-compose-minio.yml down
 
 up-infra: ## Start foundational infrastructure (MinIO, PostgreSQL DWH, Redis, Kafka, Zookeeper)
 	@echo "--> Starting core infrastructure containers..."
@@ -55,19 +79,38 @@ up-datahub: ## Start DataHub metadata & governance stack (GMS, Frontend, Neo4j, 
 	@echo "--> Starting DataHub governance platform..."
 	docker compose -f docker/docker-compose-datahub.yml up -d
 
-down: ## Stop all running service containers across all compose stacks
-	@echo "--> Stopping all services..."
-	docker compose -f docker/docker-compose-airflow.yml \
-	               -f docker/docker-compose-flink.yml \
-	               -f docker/docker-compose-datahub.yml \
-	               -f docker/docker-compose-kafka.yml \
-	               -f docker/docker-compose-minio.yml \
-	               -f docker/docker-compose-postgres.yml \
-	               -f docker/docker-compose-redis.yml down
+down: down-all ## Alias for down-all
+
+check: ## Check health and readiness of all service ports and HTTP endpoints
+	@$(PYTHON_EXEC) scripts/check_services.py
+
+reset: ## Stop all stacks, wipe docker volumes and local generated data (with confirmation)
+	@if [ "$$FORCE" = "1" ]; then \
+	    ans="y"; \
+	else \
+	    read -p "Are you sure you want to wipe all containers, volumes and local data? [y/N] " ans; \
+	fi; \
+	if [ "$$ans" = "y" ] || [ "$$ans" = "Y" ]; then \
+	    echo "--> Tearing down all stacks and wiping volumes..."; \
+	    docker compose -f docker/docker-compose-datahub.yml down -v; \
+	    docker compose -f docker/docker-compose-airflow.yml down -v; \
+	    docker compose -f docker/docker-compose-flink.yml down -v; \
+	    docker compose -f docker/docker-compose-kafka.yml \
+	                   -f docker/docker-compose-redis.yml \
+	                   -f docker/docker-compose-postgres.yml \
+	                   -f docker/docker-compose-minio.yml down -v; \
+	    rm -rf data/stream_manifest.json data/generation_manifest.json data/stream_events/ spark-warehouse/; \
+	    echo "--> System reset complete. Run 'make up-all' to restart from clean state."; \
+	else \
+	    echo "--> Reset aborted."; \
+	fi
+
+all-small: ## Execute full automated rehearsal pipeline on small dataset (up -> init -> gen -> spark -> dags -> governance -> feast)
+	@$(PYTHON_EXEC) scripts/rehearse_all_small.py
 
 init-airflow: ## Provision Airflow connections and variables for MinIO, Postgres, Redis
 	@echo "--> Initializing Airflow connections and variables..."
-	docker compose -f docker/docker-compose-airflow.yml exec -T airflow-webserver python scripts/init_airflow_connections.py || $(PYTHON_EXEC) scripts/init_airflow_connections.py
+	docker compose -f docker/docker-compose-airflow.yml exec -T airflow-webserver python /opt/airflow/ecom_project/scripts/init_airflow_connections.py
 
 gen-data: ## Generate synthetic batch dataset in small mode (bronze ingest)
 	@echo "--> Generating small batch dataset..."

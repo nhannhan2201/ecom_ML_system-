@@ -464,6 +464,15 @@ def run_dp3_features_labels(spark: SparkSession, paths: dict, step: str = "all",
         if not target_label_date:
             latest_date_val = df_silver.select(F.max("date")).collect()[0][0]
             target_label_date = str(latest_date_val)
+        else:
+            date_exists = df_silver.filter(F.col("date") == target_label_date).limit(1).count() > 0
+            if not date_exists:
+                latest_date_val = df_silver.select(F.max("date")).collect()[0][0]
+                logger.warning(
+                    f"Target date '{target_label_date}' not found in Silver events. "
+                    f"Falling back to latest available date: {latest_date_val}"
+                )
+                target_label_date = str(latest_date_val)
 
         feat_30d_count = compute_feat_user_30d(spark, paths, target_label_date)
         labels_count = compute_ground_truth_labels(spark, paths, target_label_date)
@@ -541,7 +550,7 @@ def run_optimized_pipeline():
 
     pipeline_start_time = time.time()
     spark = create_optimized_spark_session(minio_endpoint=args.minio_endpoint)
-    prediction_date = args.prediction_date or os.getenv("PREDICTION_DATE", "2019-10-26")
+    prediction_date = args.prediction_date or os.getenv("PREDICTION_DATE") or os.getenv("FEATURE_AS_OF_DATE") or None
 
     paths = get_lakehouse_paths(
         raw_base_path=args.raw_base_path,
