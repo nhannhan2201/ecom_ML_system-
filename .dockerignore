@@ -1,0 +1,23 @@
+# Docker build ignore rules
+.git/
+.gitignore
+data/
+docs/
+notebooks/
+rubic/
+*.jar
+*.parquet
+*.csv
+.env
+.env.*
+!.env.example
+*.pyc
+__pycache__/
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ipynb_checkpoints/
+spark-warehouse/
+derby.log
+metastore_db/

@@ -1,0 +1,35 @@
+# ==============================================================================
+# NAIVE BASELINE DOCKERFILE AIRFLOW (Unoptimized comparison baseline)
+# ==============================================================================
+FROM apache/airflow:2.7.3-python3.10
+
+USER root
+
+# Naive OS package installation:
+# - Full OpenJDK 11 JDK (includes GUI/X11, debug tools, compiler)
+# - No --no-install-recommends
+# - No apt cache cleanup (preserves /var/lib/apt/lists and deb cache)
+RUN rm -rf /etc/apt/sources.list.d/* && \
+    echo "deb [trusted=yes] http://archive.debian.org/debian bullseye main" > /etc/apt/sources.list && \
+    apt-get update -o Acquire::Check-Valid-Until=false && \
+    apt-get install -y openjdk-11-jdk procps
+
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+USER airflow
+
+# Naive pip installation:
+# - Direct installation without --no-cache-dir (stores wheel download cache in ~/.cache/pip)
+# - No multistage separation
+RUN pip install "email-validator>=2.0.0" && \
+    pip install \
+    pyspark==3.5.0 \
+    delta-spark==3.0.0 \
+    feast==0.38.0 \
+    redis==5.0.1 \
+    s3fs>=2023.1.0 \
+    pyarrow>=14.0.0 \
+    confluent-kafka==2.3.0 \
+    boto3==1.34.0 \
+    pendulum==2.1.2
