@@ -221,7 +221,7 @@ ecom_ML_system/
 │   │   ├── create_interactive_notebook.py
 │   │   └── create_stream_notebook.py
 │   ├── setup_dwh_schemas.py            # Kịch bản khởi tạo bảng Star Schema và đánh chỉ mục trên PostgreSQL
-│   └── setup_minio_buckets.py          # Kịch bản khởi tạo bucket MinIO (`ecommerce-raw`, `ecommerce-lakehouse`)
+│   └── quickstart_minio.py             # Kịch bản khởi tạo bucket MinIO (`ecommerce-raw`, `ecommerce-lakehouse`)
 ├── src/                                # Mã nguồn động cơ xử lý cốt lõi của hệ thống
 │   ├── api/                            # API phục vụ suy luận mô hình (Reserved for final-coursework FastAPI)
 │   │   └── README.md
