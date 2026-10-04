@@ -1,0 +1,54 @@
+# Environment & Secrets
+.env
+docker/.env
+
+# Large raw datasets & local data
+*.csv
+*.tsv
+!scratch_*.tsv
+data/
+spark-warehouse/
+
+# Python & environments
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+.uv-cache/
+*.egg-info/
+dist/
+build/
+
+# Testing & Linting
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+
+# Airflow logs and temporary files
+logs/
+airflow.cfg
+airflow.db
+
+# State and checkpoints
+.stream_checkpoint*.json
+
+# IDE and OS
+.DS_Store
+.vscode/
+.idea/
+.ipynb_checkpoints/
+.~lock.*#
+
+# Feast registry temporary files
+feature_store/data/registry.db*
+
+# Flink JARs and Plugins
+*.jar
+docker/flink_jars/
+docker/flink_plugins/

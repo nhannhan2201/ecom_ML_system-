@@ -1,0 +1,116 @@
+# ==============================================================================
+# CẤU HÌNH BỘ SINH DỮ LIỆU & TIÊM LỖI (DATA GENERATOR CONFIGURATION)
+# Hệ thống: E-Commerce Real-Time Purchase Propensity Prediction System
+# Đáp ứng chuẩn Rubric Mini-coursework (Implement Data Generator: 20 điểm)
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# 1. CẤU HÌNH CHO BATCH DATA GENERATOR (Offline Feeder - Rubric: 12 điểm)
+# ------------------------------------------------------------------------------
+batch_generator:
+  # Đường dẫn file dữ liệu gốc
+  input_csv: "2019-Oct.csv"
+  
+  # Chế độ sinh dữ liệu (modes: small | medium | full)
+  # - small:  1,000,000 rows (~131.5 MB) phục vụ phát triển & kiểm thử nhanh (Default)
+  # - medium: 5,000,000 rows (~657.5 MB) phục vụ integration test
+  # - full:   >=100GB benchmark dataset (streaming chunked, không giữ toàn bộ 100GB trong RAM)
+  mode: "small"
+  modes_definition:
+    small:
+      sample_size: 1000000
+    medium:
+      sample_size: 5000000
+    full:
+      target_size_gb: 100
+      time_shift_days: 30
+      part_size_mb: 500
+  chunk_size: 250000
+
+  # Quy mô mẫu lấy để kiểm thử (đặt null hoặc 0 nếu muốn chạy toàn bộ 42.4 triệu dòng)
+  sample_size: 1000000
+
+  # Khoảng thời gian cho luồng Batch (từ ngày 01 đến ngày 25 của tháng 10/2019)
+  date_range:
+    start_date: "2019-10-01"
+    end_date: "2019-10-25"
+
+  # Đặc trưng tự nhiên được tận dụng trực tiếp từ REES46 (không cần can thiệp giả tạo)
+  natural_characteristics:
+    use_natural_skew: true
+    # Thống kê tự nhiên:
+    # - event_type: 96.85% là 'view' (Class Imbalance cực nặng)
+    # - category_code: 'electronics.smartphone' chiếm 40.27%
+    # - brand: Top 3 (Samsung, Apple, Xiaomi) chiếm 34.38% thị phần
+    
+    use_natural_high_cardinality: true
+    # Thống kê tự nhiên:
+    # - user_id: 163,000+ unique users
+    # - product_id: 63,000+ unique products
+    # - user_session: 226,000+ unique sessions
+
+  # Tiêm 2 lỗi còn thiếu theo đúng yêu cầu của Rubric
+  fault_injection:
+    # Lỗi 1: Duplicate Rate (Rubric yêu cầu: 2% duplicate)
+    duplicate:
+      enabled: true
+      rate: 0.02  # 2% nhân bản ngẫu nhiên mô phỏng lỗi retry mạng
+
+    # Lỗi 2: Schema Evolution (Rubric yêu cầu: Schema thay đổi theo thời gian)
+    schema_evolution:
+      enabled: true
+      new_column: "discount_percent"
+      effective_date: "2019-10-16"  # Từ ngày 16/10 mới có cột này, trước đó mang giá trị NULL
+      discount_values: [4, 5, 8, 10, 12]  # Tỷ lệ giảm giá ngẫu nhiên (%)
+
+  # Cấu hình lưu trữ sau khi sinh dữ liệu (Rubric: Store data into MinIO - 2đ)
+  minio:
+    endpoint_url: "http://localhost:9000"
+    access_key: "minioadmin"
+    secret_key: "minioadmin"
+    bucket_name: "ecommerce-raw"
+    part1_object_name: "batch/raw_events_old.csv"  # 01/10 -> 15/10: 9 cột (chưa có discount_percent)
+    part2_object_name: "batch/raw_events_new.csv"  # 16/10 -> 25/10: 10 cột (đã thêm discount_percent)
+
+# ------------------------------------------------------------------------------
+# 2. CẤU HÌNH CHO STREAMING DATA GENERATOR (Online Feeder - Rubric: 8 điểm)
+# ------------------------------------------------------------------------------
+streaming_generator:
+  input_csv: "2019-Oct.csv"
+  
+  # Khoảng thời gian cho luồng Streaming (các ngày cuối tháng: 26/10 -> 31/10)
+  date_range:
+    start_date: "2019-10-26"
+    end_date: "2019-10-31"
+
+  # Cấu hình Kafka broker
+  kafka:
+    bootstrap_servers: "localhost:9092"
+    topic: "ecommerce_stream_events"
+
+  # Kế thừa Schema Evolution từ ngày 16/10 (Đồng nhất 10 cột với Batch Part 2)
+  schema:
+    include_discount: true
+    discount_column: "discount_percent"
+    discount_values: [4, 5, 8, 10, 12]
+
+  # Tiêm 3 lỗi streaming theo Rubric
+  fault_injection:
+    # Lỗi 1: Burst Traffic (Flash Sale đẩy traffic x30)
+    burst:
+      enabled: true
+      multiplier: 30
+      duration_seconds: 600
+      trigger_interval_minutes: 5
+
+    # Lỗi 2: Late Arrival (Event bị trễ 5 - 10 phút do mạng yếu)
+    late_arrival:
+      enabled: true
+      rate: 0.05  # 5% số sự kiện bị trễ
+      delay_minutes_min: 5
+      delay_minutes_max: 10
+
+    # Lỗi 3: Streaming Duplicate (Trùng lặp sự kiện trên Kafka)
+    duplicate:
+      enabled: true
+      rate: 0.015  # 1.5% duplicate

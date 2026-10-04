@@ -1,0 +1,44 @@
+# ==============================================================================
+# DOCKERFILE AIRFLOW VỚI PYSPARK, DELTA LAKE & FEAST (RUBRIC ENGINEERING FUNDAMENTALS)
+# Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
+# Kỹ thuật tối ưu:
+#   - Kế thừa official image apache/airflow:2.7.3-python3.10
+#   - Cài đặt OpenJDK 11 Headless (không GUI) để chạy PySpark Driver
+#   - Cài đặt PySpark, Delta Lake, Feast, Redis, s3fs với --no-cache-dir
+#   - Xóa bỏ hoàn toàn việc mount thư mục conda từ máy host
+# ==============================================================================
+
+FROM apache/airflow:2.7.3-python3.10
+
+USER root
+
+# 1. Cài đặt OpenJDK 11 Headless & dọn dẹp apt cache ngay lập tức để giảm dung lượng
+RUN rm -rf /etc/apt/sources.list.d/* && \
+    echo "deb [trusted=yes] http://archive.debian.org/debian bullseye main" > /etc/apt/sources.list && \
+    apt-get update -o Acquire::Check-Valid-Until=false && \
+    apt-get install -y --no-install-recommends \
+        openjdk-11-jre-headless \
+        procps && \
+    apt-get autoremove -yqq --purge && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# 2. Thiết lập JAVA_HOME chuẩn cho môi trường Linux container
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+USER airflow
+
+# 3. Cài đặt các thư viện Big Data & Feature Store phục vụ Pipeline DP1 -> DP4
+# Áp dụng --no-cache-dir để tối ưu kích thước image
+RUN pip install --no-cache-dir --upgrade "email-validator>=2.0.0" && \
+    pip install --no-cache-dir \
+    pyspark==3.5.0 \
+    delta-spark==3.0.0 \
+    feast==0.38.0 \
+    redis==5.0.1 \
+    s3fs>=2023.1.0 \
+    pyarrow>=14.0.0 \
+    confluent-kafka==2.3.0 \
+    boto3==1.34.0 \
+    pendulum==2.1.2
