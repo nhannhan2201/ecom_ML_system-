@@ -98,6 +98,10 @@ spark-opt: ## Execute Spark Bronze-to-Silver & Gold optimized job (salting, broa
 	@echo "--> Running Spark optimized job..."
 	$(PYTHON_EXEC) src/spark/spark_optimized.py
 
+spark-skew: ## Run Spark skew join benchmark comparing Baseline, AQE, and Salting
+	@echo "--> Running Spark skew experiment..."
+	$(PYTHON_EXEC) src/spark/skew_experiment.py
+
 flink-baseline: ## Submit PyFlink streaming baseline aggregation job
 	@echo "--> Submitting Flink baseline job..."
 	bash scripts/submit_flink_job.sh baseline

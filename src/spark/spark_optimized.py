@@ -77,12 +77,8 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
     except Exception as e:
         logger.warning(f"Could not resolve hostname for {minio_endpoint}: {e}")
 
-    minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
-    minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
-    if not minio_access_key:
-        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-    if not minio_secret_key:
-        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+    minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID") or "minioadmin"
+    minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
     logger.info(f">>> Đang khởi tạo SparkSession chế độ OPTIMIZED (MinIO endpoint: {minio_endpoint})...")
 
@@ -121,9 +117,8 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.S3AFileSystem" if False else "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
 
-        # Bật Vacuum retention check bypass để dọn dẹp file cũ ngay lập tức
+        # Cau hinh Delta Lake Vacuum an toan
         .config("spark.databricks.delta.vacuum.parallelDelete.enabled", "true")
-        .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
         .getOrCreate()
     )
 
@@ -338,24 +333,18 @@ def run_dp2_silver_gold_dwh(spark: SparkSession, paths: dict, step: str = "all")
         except Exception:
             pass
 
-        # 3. Xử lý Data Skew bằng Broadcast Hash Join & Salting (Rubric 3.0đ)
+        # 3. Tối ưu join bảng danh mục qua Broadcast Hash Join (Rubric 3.0đ)
         dim_categories = (
             df_silver.select("category_code")
             .distinct()
             .withColumn("category_group", F.when(F.col("category_code").startswith("electronics"), "High-Tech").otherwise("General"))
         )
-        df_silver_salted = df_silver.withColumn("salt_key", F.concat(F.col("category_code"), F.lit("_"), F.floor(F.rand() * 4)))
-        dim_categories_salted = dim_categories.withColumn("salt_array", F.array([F.lit(i) for i in range(4)])) \
-            .withColumn("exploded_salt", F.explode("salt_array")) \
-            .withColumn("salt_key", F.concat(F.col("category_code"), F.lit("_"), F.col("exploded_salt"))) \
-            .drop("salt_array", "exploded_salt")
-
-        df_skew_handled = df_silver_salted.join(
-            F.broadcast(dim_categories_salted),
-            on="salt_key",
+        df_category_joined = df_silver.join(
+            F.broadcast(dim_categories),
+            on="category_code",
             how="inner"
-        ).drop("salt_key")
-        df_skew_handled.count()
+        )
+        df_category_joined.count()
 
         # 4. Xây dựng Gold DWH (Kimball Star Schema - Rubric 10.0đ)
         # 4.1. dim_product (SCD Type 2: gom nhóm theo thuộc tính thay đổi để xác định mốc bắt đầu valid_from_ts)
@@ -421,18 +410,18 @@ def run_dp2_silver_gold_dwh(spark: SparkSession, paths: dict, step: str = "all")
         )
         fact_events.write.format("delta").mode("overwrite").option("overwriteSchema", "true").partitionBy("date").save(paths['gold_fact_events'])
 
-        # 5. STORAGE OPTIMIZATION (COMPACTION & Z-ORDERING & VACUUM - RUBRIC 2.0Đ)
-        logger.info(">>> [DP2 - STORAGE OPTIMIZATION]: Thực thi OPTIMIZE & ZORDER BY (user_id) trên fact_user_events...")
+        # 5. STORAGE OPTIMIZATION (COMPACTION & Z-ORDERING & SAFE VACUUM - RUBRIC 2.0Đ)
+        logger.info(">>> [DP2 - STORAGE OPTIMIZATION]: Thuc thi OPTIMIZE & ZORDER BY (user_id) tren fact_user_events...")
         spark.sql(f"OPTIMIZE delta.`{paths['gold_fact_events']}` ZORDER BY (user_id)")
-        logger.info("  -> Đang thực thi VACUUM để xóa sạch các file rác cũ trên MinIO...")
-        spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-        spark.sql(f"VACUUM delta.`{paths['gold_fact_events']}` RETAIN 0 HOURS")
-        spark.sql(f"VACUUM delta.`{paths['gold_dim_product']}` RETAIN 0 HOURS")
-        spark.sql(f"VACUUM delta.`{paths['gold_dim_user']}` RETAIN 0 HOURS")
-        spark.sql(f"VACUUM delta.`{paths['silver']}` RETAIN 0 HOURS")
-        logger.info("  -> Đã tối ưu hóa lưu trữ và dọn dẹp vật lý thành công cho bảng Fact và các Dimension.")
+        vacuum_retain_hours = int(os.getenv("DELTA_VACUUM_RETAIN_HOURS", "168"))
+        logger.info(f"  -> Dang thuc thi VACUUM an toan (RETAIN {vacuum_retain_hours} HOURS, bao toan Time Travel)...")
+        spark.sql(f"VACUUM delta.`{paths['gold_fact_events']}` RETAIN {vacuum_retain_hours} HOURS")
+        spark.sql(f"VACUUM delta.`{paths['gold_dim_product']}` RETAIN {vacuum_retain_hours} HOURS")
+        spark.sql(f"VACUUM delta.`{paths['gold_dim_user']}` RETAIN {vacuum_retain_hours} HOURS")
+        spark.sql(f"VACUUM delta.`{paths['silver']}` RETAIN {vacuum_retain_hours} HOURS")
+        logger.info("  -> Da toi uu hoa luu tru va don dep an toan cho bang Fact va cac Dimension.")
 
-        logger.info(f"✅ [DP2 - INGEST STAGE HOÀN THÀNH]: Thời gian: {time.time() - dp2_start:.2f}s")
+        logger.info(f"[DP2 - INGEST STAGE HOAN THANH]: Thoi gian: {time.time() - dp2_start:.2f}s")
         if step == "ingest":
             return {"status": "ingest_success", "clean_count": clean_count, "duration": time.time() - dp2_start}
 
@@ -528,6 +517,11 @@ def run_dp3_features_labels(spark: SparkSession, paths: dict, step: str = "all",
         feat_user_30d.write.format("delta").mode("overwrite").option("overwriteSchema", "true").partitionBy("date").save(paths['gold_feat'])
         feat_30d_count = feat_user_30d.count()
 
+        # Xuất bản Parquet sạch không chứa _delta_log cho Feast FileSource
+        feast_clean_path = paths.get('feast_export', 's3a://ecommerce-lakehouse/feast/user_batch_features_30d')
+        feat_user_30d.drop("date").write.mode("overwrite").parquet(feast_clean_path)
+        logger.info(f"  -> Da xuat ban Parquet sach cho Feast tai: {feast_clean_path}")
+
         # 2. Tính toán bảng nhãn Ground Truth (Chống Data Leakage, 60m right-censoring)
         user_labels = spark.sql(f"""
             WITH target_events AS (
@@ -572,16 +566,16 @@ def run_dp3_features_labels(spark: SparkSession, paths: dict, step: str = "all",
         user_labels.write.format("delta").mode("overwrite").option("overwriteSchema", "true").partitionBy("date").save(paths['gold_label'])
         labels_count = user_labels.count()
 
-        # 3. STORAGE OPTIMIZATION (COMPACTION & Z-ORDERING & VACUUM - RUBRIC 2.0Đ)
-        logger.info(">>> [DP3 - STORAGE OPTIMIZATION]: Thực thi OPTIMIZE & ZORDER BY (user_id) trên feat_user_30d...")
+        # 3. STORAGE OPTIMIZATION (COMPACTION & Z-ORDERING & SAFE VACUUM - RUBRIC 2.0Đ)
+        logger.info(">>> [DP3 - STORAGE OPTIMIZATION]: Thuc thi OPTIMIZE & ZORDER BY (user_id) tren feat_user_30d...")
         spark.sql(f"OPTIMIZE delta.`{paths['gold_feat']}` ZORDER BY (user_id)")
-        logger.info("  -> Đang thực thi VACUUM để xóa sạch các file rác cũ trên MinIO...")
-        spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
-        spark.sql(f"VACUUM delta.`{paths['gold_feat']}` RETAIN 0 HOURS")
-        spark.sql(f"VACUUM delta.`{paths['gold_label']}` RETAIN 0 HOURS")
-        logger.info("  -> Đã tối ưu hóa lưu trữ và dọn dẹp vật lý thành công cho bảng Feature Store 30d và nhãn.")
+        vacuum_retain_hours = int(os.getenv("DELTA_VACUUM_RETAIN_HOURS", "168"))
+        logger.info(f"  -> Dang thuc thi VACUUM an toan (RETAIN {vacuum_retain_hours} HOURS)...")
+        spark.sql(f"VACUUM delta.`{paths['gold_feat']}` RETAIN {vacuum_retain_hours} HOURS")
+        spark.sql(f"VACUUM delta.`{paths['gold_label']}` RETAIN {vacuum_retain_hours} HOURS")
+        logger.info("  -> Da toi uu hoa luu tru va don dep an toan cho Feature Table 30d va Ground Truth Labels.")
 
-        logger.info(f"✅ [DP3 - INGEST STAGE HOÀN THÀNH]: Thời gian: {time.time() - dp3_start:.2f}s")
+        logger.info(f"[DP3 - INGEST STAGE HOAN THANH]: Thoi gian: {time.time() - dp3_start:.2f}s")
         if step == "ingest":
             return {"status": "ingest_success", "feat_count": feat_30d_count, "labels_count": labels_count, "duration": time.time() - dp3_start}
 
@@ -664,6 +658,7 @@ def run_optimized_pipeline():
         "gold_fact_events": f"{minio_lakehouse}/gold/fact_user_events",
         "gold_feat": f"{minio_lakehouse}/gold/feat_user_30d",
         "gold_label": f"{minio_lakehouse}/gold/user_labels",
+        "feast_export": f"{minio_lakehouse}/feast/user_batch_features_30d",
     }
 
     print("\n" + "="*80)

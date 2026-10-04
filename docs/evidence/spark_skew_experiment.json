@@ -1,0 +1,74 @@
+{
+  "timestamp": "2026-10-04 03:35:01 UTC",
+  "git_commit": "538fcc1",
+  "dataset_rows": 1398581,
+  "hot_keys": [
+    999999999,
+    888888888,
+    777777777
+  ],
+  "hot_ratio": 0.35,
+  "shuffle_partitions": 8,
+  "results": [
+    {
+      "variant": "Variant A (Baseline)",
+      "aqe_enabled": false,
+      "technique": "Sort-Merge Join (No AQE, No Salting)",
+      "duration_seconds": 3.552,
+      "aggregated_rows": 209110,
+      "metrics": {
+        "stage_id": 0,
+        "num_tasks": 1,
+        "executor_run_time_sec": 1.119,
+        "disk_bytes_spilled": 0,
+        "memory_bytes_spilled": 0,
+        "task_duration_min": 1.398,
+        "task_duration_median": 1.398,
+        "task_duration_max": 1.398,
+        "shuffle_read_bytes_min": 0,
+        "shuffle_read_bytes_median": 0,
+        "shuffle_read_bytes_max": 0
+      }
+    },
+    {
+      "variant": "Variant B (AQE Skew Join)",
+      "aqe_enabled": true,
+      "technique": "AQE Skew Join (Dynamic Partition Splitting)",
+      "duration_seconds": 2.451,
+      "aggregated_rows": 209110,
+      "metrics": {
+        "stage_id": 0,
+        "num_tasks": 1,
+        "executor_run_time_sec": 1.119,
+        "disk_bytes_spilled": 0,
+        "memory_bytes_spilled": 0,
+        "task_duration_min": 1.398,
+        "task_duration_median": 1.398,
+        "task_duration_max": 1.398,
+        "shuffle_read_bytes_min": 0,
+        "shuffle_read_bytes_median": 0,
+        "shuffle_read_bytes_max": 0
+      }
+    },
+    {
+      "variant": "Variant C (Two-Stage Salting)",
+      "aqe_enabled": false,
+      "technique": "Two-Stage Salting (4 salts)",
+      "duration_seconds": 5.539,
+      "aggregated_rows": 209110,
+      "metrics": {
+        "stage_id": 0,
+        "num_tasks": 1,
+        "executor_run_time_sec": 1.119,
+        "disk_bytes_spilled": 0,
+        "memory_bytes_spilled": 0,
+        "task_duration_min": 1.398,
+        "task_duration_median": 1.398,
+        "task_duration_max": 1.398,
+        "shuffle_read_bytes_min": 0,
+        "shuffle_read_bytes_median": 0,
+        "shuffle_read_bytes_max": 0
+      }
+    }
+  ]
+}

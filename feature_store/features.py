@@ -35,10 +35,10 @@ user_entity = Entity(
 # ==============================================================================
 # 2. BATCH DATA SOURCE & FEATURE VIEW (Đặc trưng 30 ngày - Spark Offline)
 # ==============================================================================
-# Đọc trực tiếp từ bảng Parquet/Delta đã qua tối ưu hóa Z-Order trên MinIO
+# Đọc từ bản Parquet sạch xuất riêng cho Feast (không chứa _delta_log và file cũ)
 batch_source_30d = FileSource(
     name="user_batch_features_30d_source",
-    path="s3://ecommerce-lakehouse/gold/feat_user_30d/date=2019-10-26/",
+    path="s3://ecommerce-lakehouse/feast/user_batch_features_30d/",
     timestamp_field="event_timestamp",
     created_timestamp_column="created",
     s3_endpoint_override=MINIO_ENDPOINT,

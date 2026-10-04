@@ -21,12 +21,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 os.environ.setdefault("REDIS_CONNECTION_STRING", f"{REDIS_HOST}:{REDIS_PORT}")
 
-access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
-if not access_key:
-    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-if not secret_key:
-    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
 os.environ["AWS_ACCESS_KEY_ID"] = access_key
 os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
@@ -40,17 +36,23 @@ from feast import FeatureStore
 import redis
 
 def parse_datetime(dt_str: str, is_end_of_day: bool = False) -> datetime:
-    """Parse chuỗi ngày (YYYY-MM-DD hoặc ISO8601) về datetime UTC."""
+    """Parse chuoi ngay (YYYY-MM-DD hoac ISO8601) ve datetime UTC."""
     try:
-        dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
-        if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt
+        if len(dt_str.strip()) == 10:
+            dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d")
+        else:
+            dt = datetime.fromisoformat(dt_str.replace("Z", "+00:00"))
     except ValueError:
-        dt = datetime.strptime(dt_str, "%Y-%m-%d")
-        if is_end_of_day:
-            return dt.replace(hour=23, minute=59, second=59, tzinfo=timezone.utc)
-        return dt.replace(hour=0, minute=0, second=0, tzinfo=timezone.utc)
+        dt = datetime.strptime(dt_str.strip(), "%Y-%m-%d")
+
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+
+    if is_end_of_day:
+        return dt.replace(hour=23, minute=59, second=59)
+    elif len(dt_str.strip()) == 10:
+        return dt.replace(hour=0, minute=0, second=0)
+    return dt
 
 def run_materialization(mode: str = "range", start_str: str = None, end_str: str = None, views: list = None):
     """Synchronize offline features from MinIO Lakehouse Gold to the Redis online store.
@@ -66,22 +68,22 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
         views = ["user_batch_features_30d"]
 
     print("=" * 80)
-    print("🚀 [FEAST MATERIALIZATION]: ĐỒNG BỘ ĐẶC TRƯNG TỪ MINIO SANG REDIS ONLINE STORE")
+    print("[FEAST MATERIALIZATION] Dong bo dac trung tu MinIO sang Redis Online Store")
     print("=" * 80)
-    print(f"📁 Thư mục FeatureStore : {repo_path}")
-    print(f"⚙️  Chế độ đồng bộ      : {mode.upper()}")
-    print(f"🎯 Feature Views        : {', '.join(views)}")
-    print(f"📤 Đích lưu trữ (Redis) : {REDIS_HOST}:{REDIS_PORT} (Database 0)")
+    print(f"Thu muc FeatureStore : {repo_path}")
+    print(f"Che do dong bo       : {mode.upper()}")
+    print(f"Feature Views        : {', '.join(views)}")
+    print(f"Dich luu tru (Redis) : {REDIS_HOST}:{REDIS_PORT} (Database 0)")
 
     store = FeatureStore(repo_path=repo_path)
 
-    # Đo số keys hiện tại trên Redis trước khi nạp
+    # Do so keys hien tai tren Redis truoc khi nap
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
     initial_keys = r.dbsize()
-    print(f"📊 Số Keys hiện tại trên Redis trước khi nạp: {initial_keys:,}")
+    print(f"So Keys hien tai tren Redis truoc khi nap: {initial_keys:,}")
     print("-" * 80)
 
-    # Đảm bảo endpoint MinIO phù hợp với môi trường hiện tại (Docker vs Localhost)
+    # Dam bao endpoint MinIO phu hop voi moi truong hien tai
     for v_name in views:
         try:
             fv = store.get_feature_view(v_name)
@@ -91,27 +93,27 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
                     store.registry.apply_feature_view(fv, project=store.project)
                     store.registry.commit()
         except Exception as e:
-            print(f"⚠️ Could not dynamic-patch feature view {v_name}: {e}")
+            print(f"[WARN] Could not dynamic-patch feature view {v_name}: {e}")
 
     start_time = time.time()
 
     if mode == "incremental":
-        # CHẾ ĐỘ INCREMENTAL: Tự động tra cứu checkpoint lần sync trước
+        # CHE DO INCREMENTAL: Tu dong tra cuu checkpoint lan sync truoc
         end_date = parse_datetime(end_str, is_end_of_day=True) if end_str else datetime.now(timezone.utc)
-        print(f"🔄 Đang thực thi MATERIALIZE INCREMENTAL đến mốc: {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print("💡 Feast tự động truy vết checkpoint lần trước trong registry.db và chỉ nạp delta mới.")
+        print(f"[INFO] Thuc thi MATERIALIZE INCREMENTAL den moc: {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        print("[INFO] Feast tu dong truy vet checkpoint lan truoc trong registry.db va chi nap delta moi.")
 
         store.materialize_incremental(
             end_date=end_date,
             feature_views=views
         )
     else:
-        # CHẾ ĐỘ RANGE / BACKFILL: Nạp dải ngày chỉ định (Mặc định cho dataset demo 2019)
+        # CHE DO RANGE / BACKFILL: Nap dai ngay chi dinh
         start_date = parse_datetime(start_str) if start_str else datetime(2019, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
         end_date = parse_datetime(end_str, is_end_of_day=True) if end_str else datetime(2019, 10, 26, 23, 59, 59, tzinfo=timezone.utc)
 
-        print(f"📅 Khoảng thời gian nạp : {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')} ➔ {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
-        print("⏳ Đang tiến hành đọc Parquet từ MinIO và ghi nạp lên RAM Redis...")
+        print(f"[INFO] Khoang thoi gian nap: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')} -> {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        print("[INFO] Dang doc Parquet tu MinIO va nap len Redis...")
 
         store.materialize(
             start_date=start_date,
@@ -121,28 +123,29 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
 
     duration = time.time() - start_time
     print("-" * 80)
-    print(f"✅ [MATERIALIZE HOÀN TẤT XUẤT SẮC] Thời gian thực thi: {duration:.2f} giây")
+    print(f"[INFO] MATERIALIZE hoan tat trong {duration:.2f} giay")
 
-    # Kiểm tra thực tế trên Redis sau khi nạp
-    print("\n🔍 [BƯỚC NGHIỆM THU TRÊN REDIS]:")
+    # Kiem tra thuc te tren Redis sau khi nap
+    print("\n[NGHIEM THU TREN REDIS]:")
     final_keys = r.dbsize()
-    print(f"  • Số Keys trước khi nạp            : {initial_keys:,} keys")
-    print(f"  • Tổng số Keys hiện tại trên Redis : {final_keys:,} keys")
-    print(f"  • Số Keys tăng thêm                : +{final_keys - initial_keys:,} keys")
+    added_keys = final_keys - initial_keys
+    print(f"  - So Keys truoc khi nap            : {initial_keys:,} keys")
+    print(f"  - Tong so Keys hien tai tren Redis : {final_keys:,} keys")
+    print(f"  - So Keys tang them (delta)        : +{added_keys:,} keys")
 
-    # Lấy 1 key ngẫu nhiên để xác nhận dữ liệu đã nằm trên RAM
+    # Lay 1 key mau de xac nhan du lieu da nam tren RAM
     keys = r.keys(b"*")
     if keys:
         sample_key = keys[0]
         key_type = r.type(sample_key).decode("utf-8")
-        print(f"  • Key mẫu phát hiện                : {sample_key[:40]}...")
-        print(f"  • Kiểu dữ liệu trên Redis          : {key_type.upper()}")
+        print(f"  - Key mau phat hien                : {sample_key[:40]}...")
+        print(f"  - Kieu du lieu tren Redis          : {key_type.upper()}")
         if key_type == "hash":
             sample_hash = r.hgetall(sample_key)
-            print(f"  • Số trường đặc trưng (Fields)     : {len(sample_hash)} fields")
+            print(f"  - So truong dac trung (Fields)     : {len(sample_hash)} fields")
             field_names = [f.decode("utf-8", errors="ignore") for f in list(sample_hash.keys())[:5]]
-            print(f"  • Các trường mẫu                   : {field_names}")
-        print("  • Trạng thái                        : ĐÃ NẠP THÀNH CÔNG LÊN RAM REDIS!")
+            print(f"  - Cac truong mau                   : {field_names}")
+        print("  - Trang thai                       : DA NAP THANH CONG TAI REDIS ONLINE STORE")
     print("=" * 80)
 
 def main():

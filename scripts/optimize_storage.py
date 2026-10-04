@@ -1,37 +1,49 @@
 #!/usr/bin/env python3
 """
 ================================================================================
-SCRIPTS/OPTIMIZE_STORAGE.PY - BẢO TRÌ & TỐI ƯU HÓA LƯU TRỮ DELTA LAKEHOUSE
-Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Mục tiêu Rubric: How to optimize your data storage (Lakehouse Compaction & Z-Order) (2.0đ)
-================================================================================
-Kịch bản kiểm chứng:
-1. TRƯỚC TỐI ƯU (Before):
-   - Đếm tổng số file Parquet nhỏ hiện tại trong bảng Fact (18 file nhỏ do Spark ghi song song).
-   - Đo thời gian truy vấn tìm kiếm 1 user cụ thể (SELECT ... WHERE user_id = ...).
-2. THỰC THI TỐI ƯU HÓA (Execute Optimization):
-   - Chạy lệnh Delta Lake: OPTIMIZE delta.fact_user_events ZORDER BY (user_id)
-   - Chạy lệnh Delta Lake: OPTIMIZE delta.feat_user_30d ZORDER BY (user_id)
-3. SAU TỐI ƯU (After):
-   - Đếm lại số file Parquet (đã được gom lại thành ít file lớn hơn theo chuẩn Compaction).
-   - Đo lại thời gian truy vấn cùng user trên để chứng minh hiệu quả của Data Skipping.
-4. XUẤT BẢNG ĐỐI CHIẾU TRỰC QUAN ĐỂ CHỤP ẢNH NỘP RUBRIC.
+SCRIPTS/OPTIMIZE_STORAGE.PY - DELTA LAKEHOUSE STORAGE OPTIMIZATION BENCHMARK
+Project: E-Commerce Real-Time Purchase Propensity Prediction System
+Author: Hoang Minh Nhan
+
+Purpose:
+  Evaluates Lakehouse Compaction, Z-Ordering, and VACUUM performance:
+  1. Measures active Parquet files and query time before optimization.
+  2. Runs OPTIMIZE ZORDER BY (user_id) to activate data skipping.
+  3. Measures reduction in active Parquet files (DESCRIBE DETAIL numFiles).
+  4. Runs safe VACUUM (RETAIN 168 HOURS) by default; only runs RETAIN 0 when
+     --demo-vacuum is explicitly specified (with time travel warning).
+  5. Outputs docs/evidence/lakehouse_inspection.txt.
 ================================================================================
 """
 
 import os
 import sys
 import time
+import argparse
+import subprocess
+from datetime import datetime, timezone
 from pyspark.sql import SparkSession
 
-# Đồng bộ phiên bản Python giữa Spark Driver và Worker
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 
 
+def get_git_commit() -> str:
+    try:
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+    except Exception:
+        return "unknown"
+
+
 def create_spark_session():
-    """Khởi tạo SparkSession với cấu hình Delta Lake & MinIO S3A."""
-    print("⏳ [1/4] Đang khởi tạo SparkSession kết nối Delta Lake và MinIO...")
+    """Initialize SparkSession for storage optimization."""
+    endpoint = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
+    if "ecom_minio" in endpoint:
+        endpoint = endpoint.replace("ecom_minio", "localhost")
+
+    access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID") or "minioadmin"
+    secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY") or "minioadmin"
+
     spark = (
         SparkSession.builder.appName("Storage-Optimization-Benchmark")
         .master("local[*]")
@@ -48,74 +60,84 @@ def create_spark_session():
             "spark.sql.catalog.spark_catalog",
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
-        # Cấu hình MinIO S3A
-        .config("spark.hadoop.fs.s3a.endpoint", os.environ.get("MINIO_ENDPOINT", "http://localhost:9000"))
-        .config("spark.hadoop.fs.s3a.access.key", os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID") or (_ for _ in ()).throw(ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY'")))
-        .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY") or (_ for _ in ()).throw(ValueError("Missing required environment variable: 'MINIO_SECRET_KEY'")))
+        .config("spark.hadoop.fs.s3a.endpoint", endpoint)
+        .config("spark.hadoop.fs.s3a.access.key", access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", secret_key)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         .getOrCreate()
     )
-    spark.sparkContext.setLogLevel("ERROR")
+    spark.sparkContext.setLogLevel("WARN")
     return spark
 
 
-def benchmark_storage():
+def benchmark_storage(demo_vacuum: bool = False):
     spark = create_spark_session()
 
     minio_lakehouse = "s3a://ecommerce-lakehouse"
     gold_fact_path = f"{minio_lakehouse}/gold/fact_user_events"
     gold_feat_path = f"{minio_lakehouse}/gold/feat_user_30d"
 
-    # Chọn một user mẫu có thực trong tập dữ liệu để kiểm tra truy vấn
-    sample_user_id = 386070015
+    sample_user_id = 513359812
 
     print("\n" + "=" * 80)
-    print(" BẮT ĐẦU ĐO LƯỜNG TRƯỚC TỐI ƯU (BASELINE / BEFORE)")
+    print("BAT DAU DO LUONG TRUOC TOI UU (BASELINE / BEFORE)")
     print("=" * 80)
 
-    # 1. ĐO LƯỜNG TRƯỚC TỐI ƯU
-    # Lấy metadata chi tiết của bảng Fact qua lệnh DESCRIBE DETAIL của Delta Lake
-    detail_before = spark.sql(f"DESCRIBE DETAIL delta.`{gold_fact_path}`").collect()[0]
-    files_before = detail_before["numFiles"]
-    size_mb_before = detail_before["sizeInBytes"] / (1024 * 1024)
-    avg_file_size_before = size_mb_before / files_before if files_before > 0 else 0
+    # 1. Đo lường trước tối ưu
+    try:
+        detail_before = spark.sql(f"DESCRIBE DETAIL delta.`{gold_fact_path}`").collect()[0]
+        files_before = detail_before["numFiles"]
+        size_mb_before = detail_before["sizeInBytes"] / (1024 * 1024)
+        avg_file_size_before = size_mb_before / files_before if files_before > 0 else 0
+    except Exception as e:
+        print(f"Loi doc metadata ban dau tu {gold_fact_path}: {e}")
+        spark.stop()
+        return
 
-    print("📊 [Bảng fact_user_events]:")
-    print(f"  - Số lượng file Parquet hiện tại : {files_before} files (phân mảnh nhỏ)")
-    print(f"  - Tổng dung lượng               : {size_mb_before:.2f} MB")
-    print(f"  - Kích thước trung bình mỗi file : {avg_file_size_before:.2f} MB/file")
+    print("Bang fact_user_events:")
+    print(f"  - So luong file Parquet hien tai : {files_before} files (phan manh nho)")
+    print(f"  - Tong dung luong               : {size_mb_before:.2f} MB")
+    print(f"  - Kich thuoc trung binh moi file : {avg_file_size_before:.2f} MB/file")
 
-    # Thử nghiệm câu truy vấn lọc theo user_id trước khi tối ưu:
-    print(f"\n🔍 Đang chạy truy vấn thử nghiệm: SELECT * WHERE user_id = {sample_user_id}...")
+    print(f"\nDang chay truy van thu nghiem: SELECT COUNT(*) WHERE user_id = {sample_user_id}...")
     start_q_before = time.time()
-    count_res_before = spark.sql(
-        f"SELECT COUNT(*) FROM delta.`{gold_fact_path}` WHERE user_id = {sample_user_id}"
-    ).collect()[0][0]
+    try:
+        count_res_before = spark.sql(
+            f"SELECT COUNT(*) FROM delta.`{gold_fact_path}` WHERE user_id = {sample_user_id}"
+        ).collect()[0][0]
+    except Exception:
+        count_res_before = 0
     time_q_before = time.time() - start_q_before
-    print(f"  -> Kết quả: Tìm thấy {count_res_before} sự kiện của user trong {time_q_before:.3f} giây.")
+    print(f"  -> Ket qua: Tim thay {count_res_before} su kien trong {time_q_before:.3f} giay.")
 
-    # 2. THỰC THI TỐI ƯU HÓA: COMPACTION & Z-ORDERING
+    # 2. Thực thi Compaction & Z-Order
     print("\n" + "=" * 80)
-    print(" 🚀 ĐANG THỰC HIỆN OPTIMIZE & ZORDER BY (user_id)...")
+    print("DANG THUC HIEN OPTIMIZE & ZORDER BY (user_id)...")
     print("=" * 80)
-    print("  -> Delta Lake đang gom các file nhỏ (Compaction) và sắp xếp đa chiều (Z-Order)...")
 
     t_opt_start = time.time()
-    # Lệnh cốt lõi của Delta Lake:
-    opt_fact_result = spark.sql(
-        f"OPTIMIZE delta.`{gold_fact_path}` ZORDER BY (user_id)"
-    ).collect()[0]
+    spark.sql(f"OPTIMIZE delta.`{gold_fact_path}` ZORDER BY (user_id)").collect()
     opt_duration = time.time() - t_opt_start
 
-    # Tối ưu tiếp bảng Feature Store 30d
-    print("  -> Đang tối ưu tiếp bảng gold/feat_user_30d ZORDER BY (user_id)...")
     spark.sql(f"OPTIMIZE delta.`{gold_feat_path}` ZORDER BY (user_id)").collect()
 
-    # 3. ĐO LƯỜNG SAU TỐI ƯU
+    # 3. VACUUM
+    if demo_vacuum:
+        print("\nCANH BAO: Che do --demo-vacuum dang xoa file cu ngay lap tuc (RETAIN 0). Luu y: thao tac nay lam mat Delta Time Travel!")
+        spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+        spark.sql(f"VACUUM delta.`{gold_fact_path}` RETAIN 0 HOURS")
+        spark.sql(f"VACUUM delta.`{gold_feat_path}` RETAIN 0 HOURS")
+    else:
+        retain_hours = int(os.getenv("DELTA_VACUUM_RETAIN_HOURS", "168"))
+        print(f"\nThuc thi VACUUM an toan (RETAIN {retain_hours} HOURS, bao toan Delta Time Travel)...")
+        spark.sql(f"VACUUM delta.`{gold_fact_path}` RETAIN {retain_hours} HOURS")
+        spark.sql(f"VACUUM delta.`{gold_feat_path}` RETAIN {retain_hours} HOURS")
+
+    # 4. Đo lường sau tối ưu
     print("\n" + "=" * 80)
-    print(" KẾT QUẢ ĐO LƯỜNG SAU TỐI ƯU (OPTIMIZED / AFTER)")
+    print("KET QUA DO LUONG SAU TOI UU (OPTIMIZED / AFTER)")
     print("=" * 80)
 
     detail_after = spark.sql(f"DESCRIBE DETAIL delta.`{gold_fact_path}`").collect()[0]
@@ -123,38 +145,66 @@ def benchmark_storage():
     size_mb_after = detail_after["sizeInBytes"] / (1024 * 1024)
     avg_file_size_after = size_mb_after / files_after if files_after > 0 else 0
 
-    print("📊 [Bảng fact_user_events sau khi Optimize]:")
-    print(f"  - Số lượng file Parquet còn lại : {files_after} files (đã gom gọn gàng)")
-    print(f"  - Kích thước trung bình mỗi file: {avg_file_size_after:.2f} MB/file")
+    print("Bang fact_user_events sau khi Optimize:")
+    print(f"  - So luong file Parquet con hoat dong: {files_after} files (da gom)")
+    print(f"  - Kich thuoc trung binh moi file     : {avg_file_size_after:.2f} MB/file")
 
-    # Chạy lại cùng câu truy vấn lọc theo user_id sau khi đã có Z-Order (kích hoạt Data Skipping):
-    print(f"\n🔍 Đang chạy lại truy vấn: SELECT * WHERE user_id = {sample_user_id}...")
     start_q_after = time.time()
     count_res_after = spark.sql(
         f"SELECT COUNT(*) FROM delta.`{gold_fact_path}` WHERE user_id = {sample_user_id}"
     ).collect()[0][0]
     time_q_after = time.time() - start_q_after
-    print(f"  -> Kết quả: Tìm thấy {count_res_after} sự kiện của user trong {time_q_after:.3f} giây.")
+    print(f"  -> Ket qua: Tim thay {count_res_after} su kien trong {time_q_after:.3f} giay.")
 
     speedup = (time_q_before / time_q_after) if time_q_after > 0 else 1.0
 
-    # 4. BẢNG TỔNG HỢP HIỆU QUẢ NỘP RUBRIC ĐỒ ÁN
-    print("\n" + "=" * 80)
-    print(" 🏆 BẢNG TỔNG HỢP HIỆU QUẢ TỐI ƯU LƯU TRỮ LAKEHOUSE (NỘP RUBRIC 2.0Đ)")
-    print("=" * 80)
-    print(f" {'Tiêu chí đánh giá':<35} | {'Trước tối ưu (Before)':<20} | {'Sau tối ưu (After)':<20}")
-    print("-" * 80)
-    print(f" {'1. Số lượng file Parquet':<35} | {f'{files_before} files (phân mảnh)':<20} | {f'{files_after} files (đã gom)':<20}")
-    print(f" {'2. Kích thước trung bình/file':<35} | {f'{avg_file_size_before:.2f} MB/file':<20} | {f'{avg_file_size_after:.2f} MB/file':<20}")
-    print(f" {'3. Kỹ thuật sắp xếp dữ liệu':<35} | {'Chưa sắp xếp':<20} | {'Z-Order (user_id)':<20}")
-    print(f" {'4. Cơ chế Data Skipping':<35} | {'Không kích hoạt':<20} | {'BẬT (Bỏ qua 80%+ file)':<20}")
-    print(f" {'5. Tốc độ query (WHERE user_id)':<35} | {f'{time_q_before:.3f}s':<20} | {f'{time_q_after:.3f}s ({speedup:.1f}x nhanh hơn)':<20}")
-    print(f" {'6. Thời gian thực thi Optimize':<35} | {'-':<20} | {f'{opt_duration:.2f} giây':<20}")
-    print("=" * 80)
-    print(" ✅ Đoạn code kiểm chứng và bảng số liệu trên đã sẵn sàng chụp ảnh nộp Rubric!\n")
+    git_commit = get_git_commit()
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+    vac_hours = 0 if demo_vacuum else 168
+    vac_mode = "Demo" if demo_vacuum else "Safe"
+    vac_str = f"RETAIN {vac_hours}h ({vac_mode})"
+    cmd_flag = " --demo-vacuum" if demo_vacuum else ""
+
+    report_lines = [
+        "================================================================================",
+        "BAO CAO TOI UU HOA LUU TRU LAKEHOUSE (LAKEHOUSE STORAGE OPTIMIZATION REPORT)",
+        "================================================================================",
+        f"Thoi diem do luong: {timestamp}",
+        f"Lenh thuc thi     : python3 scripts/optimize_storage.py{cmd_flag}",
+        f"Git commit hash   : {git_commit}",
+        f"Bang muc tieu     : {gold_fact_path}",
+        f"User ID kiem tra  : {sample_user_id}",
+        "--------------------------------------------------------------------------------",
+        f"{'Tieu chi danh gia':<32} | {'Truoc toi uu (Before)':<22} | {'Sau toi uu (After)':<22}",
+        "--------------------------------------------------------------------------------",
+        f"{'1. So file Parquet hoat dong':<32} | {f'{files_before} files (phan manh)':<22} | {f'{files_after} files (da gom)':<22}",
+        f"{'2. Kich thuoc trung binh/file':<32} | {f'{avg_file_size_before:.2f} MB/file':<22} | {f'{avg_file_size_after:.2f} MB/file':<22}",
+        f"{'3. Ky thuat sap xep da chieu':<32} | {'Chua sap xep':<22} | {'Z-Order (user_id)':<22}",
+        f"{'4. Co che Data Skipping':<32} | {'Khong kich hoat':<22} | {'BAT (Bo qua file khong khop)':<22}",
+        f"{'5. Thoi gian query user_id':<32} | {f'{time_q_before:.3f}s':<22} | {f'{time_q_after:.3f}s ({speedup:.1f}x)':<22}",
+        f"{'6. Thoi gian chay OPTIMIZE':<32} | {'-':<22} | {f'{opt_duration:.2f}s':<22}",
+        f"{'7. Che do VACUUM':<32} | {'-':<22} | {f'{vac_str}':<22}",
+        "================================================================================"
+    ]
+
+    report_text = "\n".join(report_lines)
+    print("\n" + report_text + "\n")
+
+    out_file = "docs/evidence/lakehouse_inspection.txt"
+    os.makedirs(os.path.dirname(out_file), exist_ok=True)
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write(report_text + "\n")
+    print(f"Da ghi nhan ket qua vao: {out_file}\n")
 
     spark.stop()
 
 
+def main():
+    parser = argparse.ArgumentParser(description="Lakehouse Storage Optimization Benchmark")
+    parser.add_argument("--demo-vacuum", action="store_true", help="Chay VACUUM RETAIN 0 cho demo (lam mat Time Travel)")
+    args = parser.parse_args()
+    benchmark_storage(demo_vacuum=args.demo_vacuum)
+
+
 if __name__ == "__main__":
-    benchmark_storage()
+    main()

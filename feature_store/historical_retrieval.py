@@ -22,12 +22,8 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 if "ecom_minio" in MINIO_ENDPOINT:
     MINIO_ENDPOINT = MINIO_ENDPOINT.replace("ecom_minio", "minio")
 
-access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
-if not access_key:
-    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-if not secret_key:
-    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
 os.environ["AWS_ACCESS_KEY_ID"] = access_key
 os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key

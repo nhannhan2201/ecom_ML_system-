@@ -19,12 +19,8 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 os.environ.setdefault("REDIS_CONNECTION_STRING", f"{REDIS_HOST}:{REDIS_PORT}")
 
-access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
-if not access_key:
-    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-if not secret_key:
-    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
 os.environ["AWS_ACCESS_KEY_ID"] = access_key
 os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
@@ -33,7 +29,7 @@ os.environ["FEAST_S3_ENDPOINT_URL"] = MINIO_ENDPOINT
 
 
 def get_real_user_ids_from_gold(limit: int = 5) -> list:
-    """Đọc danh sách User ID từ bảng Gold Lakehouse trên MinIO."""
+    """Doc danh sach User ID tu bang Feast Parquet hoac Gold Lakehouse tren MinIO."""
     try:
         from pyarrow import fs as pafs
         import pyarrow.parquet as pq
@@ -45,16 +41,30 @@ def get_real_user_ids_from_gold(limit: int = 5) -> list:
             endpoint_override=endpoint_host,
             scheme="http",
         )
+        # Thu doc tu feast/user_batch_features_30d truoc
+        try:
+            table = pq.read_table(
+                "ecommerce-lakehouse/feast/user_batch_features_30d",
+                filesystem=minio_fs,
+                columns=["user_id"],
+            ).slice(0, limit)
+            real_ids = table["user_id"].to_pylist()
+            if real_ids:
+                return real_ids
+        except Exception:
+            pass
+
+        # Fallback doc tu gold/feat_user_30d
         table = pq.read_table(
-            "ecommerce-lakehouse/gold/feat_user_30d/date=2019-10-26/",
+            "ecommerce-lakehouse/gold/feat_user_30d",
             filesystem=minio_fs,
-            columns=["user_id"]
+            columns=["user_id"],
         ).slice(0, limit)
         real_ids = table["user_id"].to_pylist()
         if real_ids:
             return real_ids
     except Exception as e:
-        print(f"⚠️ PyArrow S3: {e}")
+        print(f"[WARN] PyArrow S3 read: {e}")
 
     return [489492092, 512364693, 512378423, 512383224, 512436165][:limit]
 
@@ -73,41 +83,41 @@ def test_online_serving(custom_user_ids: list = None):
     store = FeatureStore(repo_path=repo_path)
 
     print("=" * 80)
-    print("⚡ [TEST ONLINE SERVING]: TRUY VẤN ĐẶC TRƯNG TỪ RAM REDIS PHỤC VỤ DỰ ĐOÁN AI")
+    print("[TEST ONLINE SERVING] Truy van dac trung tu Redis Online Store")
     print("=" * 80)
 
-    # 1. Xác định danh sách User IDs thực tế
+    # 1. Xac dinh danh sach User IDs thuc te
     if custom_user_ids:
         sample_user_ids = custom_user_ids
     else:
         sample_user_ids = get_real_user_ids_from_gold(limit=5)
 
-    print(f"🔍 Danh sách {len(sample_user_ids)} User ID kiểm thử:")
+    print(f"Danh sach {len(sample_user_ids)} User ID kiem thu:")
     for uid in sample_user_ids:
-        print(f"   • User ID: {uid}")
+        print(f"   - User ID: {uid}")
     print("-" * 80)
 
-    # Danh sách đầy đủ 9 đặc trưng (5 Batch 30d + 4 Stream 15m)
+    # Danh sach day du 9 dac trung (5 Batch 30d + 4 Stream 15m)
     features_to_fetch = [
-        # Nhóm Offline Batch Features (30 ngày)
+        # Nhom Offline Batch Features (30 ngay)
         "user_batch_features_30d:f_views_30d",
         "user_batch_features_30d:f_carts_30d",
         "user_batch_features_30d:f_purchases_30d",
         "user_batch_features_30d:f_spend_30d",
         "user_batch_features_30d:f_distinct_categories_30d",
-        # Nhóm Online Stream Features (15 phút)
+        # Nhom Online Stream Features (15 phut)
         "user_stream_features_15m:f_views_15m",
         "user_stream_features_15m:f_carts_15m",
         "user_stream_features_15m:f_purchases_15m",
         "user_stream_features_15m:total_spend_15m",
     ]
 
-    print(f"🎯 Danh sách Feature truy vấn ({len(features_to_fetch)} features):")
+    print(f"Danh sach Feature truy van ({len(features_to_fetch)} features):")
     for feat in features_to_fetch:
-        print(f"   • {feat}")
+        print(f"   - {feat}")
     print("-" * 80)
 
-    # 2. BENCHMARK ĐỘ TRỄ CHO 1 USER (Single Request)
+    # 2. BENCHMARK DO TRE CHO 1 USER (Single Request)
     single_user = [{"user_id": sample_user_ids[0]}]
     _ = store.get_online_features(features=features_to_fetch, entity_rows=single_user)
 
@@ -123,18 +133,18 @@ def test_online_serving(custom_user_ids: list = None):
     avg_latency = sum(latencies) / len(latencies)
     min_latency = min(latencies)
 
-    print("⏱️  [BENCHMARK TỐC ĐỘ TRUY XUẤT CHO 1 KHÁCH HÀNG]:")
-    print(f"   • User ID                             : {sample_user_ids[0]}")
-    print(f"   • Độ trễ trung bình (Average Latency) : {avg_latency:.2f} ms")
-    print(f"   • Độ trễ tốt nhất (Best Latency)       : {min_latency:.2f} ms")
+    print("[BENCHMARK TOC DO TRUY XUAT CHO 1 KHACH HANG]:")
+    print(f"   - User ID                             : {sample_user_ids[0]}")
+    print(f"   - Do tre trung binh (Average Latency) : {avg_latency:.2f} ms")
+    print(f"   - Do tre tot nhat (Best Latency)       : {min_latency:.2f} ms")
     if avg_latency < 5.0:
-        print("   • Đánh giá SLA (< 5ms)                : ✅ ĐẠT XUẤT SẮC!")
+        print("   - Danh gia SLA (< 5ms)                : DAT")
     else:
-        print(f"   • Đánh giá SLA                        : ⚠️ {avg_latency:.2f}ms")
+        print(f"   - Danh gia SLA                        : {avg_latency:.2f}ms")
     print("-" * 80)
 
-    # 3. TRUY VẤN BATCH NHIỀU USER
-    print("📊 [KẾT QUẢ 9 ĐẶC TRƯNG LẤY TỪ RAM REDIS]:")
+    # 3. TRUY VAN BATCH NHIEU USER
+    print("[KET QUA 9 DAC TRUNG LAY TU RAM REDIS]:")
     batch_users = [{"user_id": uid} for uid in sample_user_ids]
     online_features = store.get_online_features(
         features=features_to_fetch,
@@ -152,7 +162,7 @@ def test_online_serving(custom_user_ids: list = None):
 
     print(df_features.to_string(index=False))
     print("=" * 80)
-    print("🎉 TOÀN BỘ 9 ĐẶC TRƯNG ĐÃ ĐƯỢC SERVING TRỰC TIẾP TỪ RAM REDIS THÀNH CÔNG RỰC RỠ!")
+    print("Ket qua: Hoan tat truy van dac trung truc tiep tu Redis Online Store.")
 
 
 def main():
