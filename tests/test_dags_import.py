@@ -22,6 +22,25 @@ def test_dags_import_and_structure():
     assert dp3_module.dag.dag_id == "dp3_compute_offline_features"
     assert dp4_module.dag.dag_id == "dp4_feast_materialize"
 
+    # 2. Assert tags and descriptions exist on every DAG
+    for mod in [dp1_module, dp2_module, dp3_module, dp4_module]:
+        dag = mod.dag
+        assert dag.description is not None and len(dag.description) > 0, f"DAG {dag.dag_id} missing description"
+        assert dag.tags is not None and len(dag.tags) > 0, f"DAG {dag.dag_id} missing tags"
+
+
+def test_dags_zero_hardcoded_credentials():
+    """Verify that none of the DAG files contain hardcoded credentials."""
+    import pathlib
+
+    dags_dir = pathlib.Path(__file__).parent.parent / "dags"
+    forbidden_tokens = ["minioadmin", "password123", "secret123"]
+
+    for dag_file in dags_dir.glob("dp*.py"):
+        content = dag_file.read_text(encoding="utf-8")
+        for token in forbidden_tokens:
+            assert token not in content, f"Hardcoded credential '{token}' found in {dag_file.name}"
+
 
 def test_dp1_dag_tasks_and_dependencies():
     """Verify DP1 tasks, execution sequence, and downstream trigger."""

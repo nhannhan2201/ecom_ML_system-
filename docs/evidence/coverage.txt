@@ -1,0 +1,67 @@
+============================= test session starts ==============================
+platform linux -- Python 3.13.12, pytest-9.1.1, pluggy-1.5.0 -- /home/nhan/miniconda3/bin/python3.13
+cachedir: .pytest_cache
+hypothesis profile 'default'
+rootdir: /home/nhan/Projects/ecom_ML_system
+configfile: pyproject.toml
+plugins: hypothesis-6.165.3, langsmith-0.10.15, locust-2.46.3, anyio-4.10.0, typeguard-4.6.0, cov-7.1.0
+collecting ... collected 32 items
+
+tests/test_dags_import.py::test_dags_import_and_structure PASSED         [  3%]
+tests/test_dags_import.py::test_dags_zero_hardcoded_credentials PASSED   [  6%]
+tests/test_dags_import.py::test_dp1_dag_tasks_and_dependencies PASSED    [  9%]
+tests/test_dags_import.py::test_dp2_dag_tasks_and_dependencies PASSED    [ 12%]
+tests/test_dags_import.py::test_dp3_dag_tasks_and_dependencies PASSED    [ 15%]
+tests/test_dags_import.py::test_dp4_dag_tasks_and_dependencies PASSED    [ 18%]
+tests/test_dags_import.py::test_trigger_cascade_continuity PASSED        [ 21%]
+tests/test_generator.py::test_schema_evolution_part1 PASSED              [ 25%]
+tests/test_generator.py::test_schema_evolution_part2 PASSED              [ 28%]
+tests/test_generator.py::test_duplicate_rate_injection[0.0] PASSED       [ 31%]
+tests/test_generator.py::test_duplicate_rate_injection[0.02] PASSED      [ 34%]
+tests/test_generator.py::test_duplicate_rate_injection[0.05] PASSED      [ 37%]
+tests/test_generator.py::test_duplicate_rate_injection[0.1] PASSED       [ 40%]
+tests/test_generator.py::test_seed_sequence_reproducibility PASSED       [ 43%]
+tests/test_generator.py::test_deterministic_user_id_offset PASSED        [ 46%]
+tests/test_generator.py::test_deterministic_price_jitter PASSED          [ 50%]
+tests/test_generator.py::test_skew_injection_consistent_sessions PASSED  [ 53%]
+tests/test_generator.py::test_late_event_buffer_pure_logic PASSED        [ 56%]
+tests/test_generator.py::test_stream_parse_csv_line PASSED               [ 59%]
+tests/test_generator.py::test_transform_chunk_hypothesis_invariants PASSED [ 62%]
+tests/test_generator.py::test_batch_generator_dry_run_estimation PASSED  [ 65%]
+tests/test_generator.py::test_batch_generator_modes_initialization PASSED [ 68%]
+tests/test_generator.py::test_batch_generator_drift_injection PASSED     [ 71%]
+tests/test_generator.py::test_batch_generator_save_manifest_local PASSED [ 75%]
+tests/test_generator.py::test_stream_generator_checkpoint_and_manifest PASSED [ 78%]
+tests/test_governance_contracts.py::test_bronze_null_contract_pure PASSED [ 81%]
+tests/test_governance_contracts.py::test_silver_dedup_contract_pure PASSED [ 84%]
+tests/test_governance_contracts.py::test_gold_scd2_integrity_contract_pure PASSED [ 87%]
+tests/test_governance_contracts.py::test_gold_feast_schema_contract_pure PASSED [ 90%]
+tests/test_governance_contracts.py::test_gold_binary_labels_contract_pure PASSED [ 93%]
+tests/test_governance_contracts.py::test_pure_contracts_missing_columns_edge_cases PASSED [ 96%]
+tests/test_governance_contracts.py::test_emit_assertion_result_datahub_serialization PASSED [100%]
+
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.13.12-final-0 _______________
+
+Name                                    Stmts   Miss  Cover   Missing
+---------------------------------------------------------------------
+feature_store/__init__.py                   0      0   100%
+feature_store/features.py                  11     11     0%   10-97
+feature_store/historical_retrieval.py      83     83     0%   12-155
+feature_store/materialize.py              103    103     0%   10-188
+feature_store/stream_push_job.py          173    173     0%   11-307
+governance/catalog.py                      56      0   100%
+governance/sync_catalog.py                 95     95     0%   12-261
+governance/verify_contracts.py            138     63    54%   40, 199-210, 263-393, 398-410, 414
+src/flink/stream_baseline.py               52     52     0%   36-183
+src/flink/stream_optimized.py              92     92     0%   39-356
+src/generator/__init__.py                   2      0   100%
+src/generator/batch_generator.py          491    302    38%   91, 115-116, 125-128, 143-147, 155-161, 167-175, 185-191, 222-223, 263, 309-314, 325-335, 356, 386, 393-540, 548-749, 753-758, 762-781
+src/generator/late_event_buffer.py         33      0   100%
+src/generator/stream_generator.py         279    224    20%   32-33, 57-97, 101-110, 114-123, 127-155, 159-170, 192, 209-210, 214-226, 230-231, 274-427, 431-449, 454-468, 477
+src/spark/skew_experiment.py              148    148     0%   20-403
+src/spark/spark_baseline.py               118    118     0%   38-309
+src/spark/spark_optimized.py              329    329     0%   27-735
+---------------------------------------------------------------------
+TOTAL                                    2203   1793    19%
+============================== 32 passed in 3.87s ==============================

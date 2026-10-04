@@ -128,7 +128,8 @@ feast-apply: ## Apply Feast feature store repository configuration
 
 test: ## Run unit tests with pytest and coverage
 	@echo "--> Running unit tests with pytest..."
-	pytest --cov=src --cov=governance --cov=feature_store tests/
+	@mkdir -p docs/evidence
+	pytest --cov=src/generator --cov=governance --cov=feature_store --cov=src/spark --cov=src/flink tests/ | tee docs/evidence/coverage.txt
 
 lint: ## Run code linter with ruff
 	@echo "--> Running ruff linter..."

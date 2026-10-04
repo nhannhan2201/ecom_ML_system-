@@ -16,6 +16,7 @@ Validates:
 ================================================================================
 """
 
+import time
 from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
@@ -287,27 +288,28 @@ def test_stream_parse_csv_line():
 # Property-based testing with hypothesis
 @given(
     dup_rate=st.floats(min_value=0.0, max_value=0.20),
-    is_part2=st.booleans()
+    is_part2=st.booleans(),
+    chunk_size=st.integers(min_value=20, max_value=80)
 )
 @settings(max_examples=15, deadline=None)
-def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2):
+def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2, chunk_size):
     """
     Property:
-    1. Output row count == Input row count + n_dup.
-    2. Repeated calls with identical parameters yield identical outputs.
+    1. Output row count == Input row count + n_dup, where n_dup = int(chunk_size * dup_rate).
+    2. Every injected duplicate row is an exact match of an original row.
+    3. Repeated calls with identical parameters yield identical outputs.
     """
     gen = BatchDataGenerator(config_path="config/generator_config.yaml", dry_run=True)
-    n_rows = 50
     sample_df = pd.DataFrame({
-        "event_time": [f"2019-10-01 10:{i:02d}:00 UTC" for i in range(n_rows)],
-        "event_type": ["view"] * n_rows,
-        "product_id": list(range(1, n_rows + 1)),
-        "category_id": [100] * n_rows,
-        "category_code": ["test"] * n_rows,
-        "brand": ["brand_a"] * n_rows,
-        "price": [50.0] * n_rows,
-        "user_id": list(range(100, 100 + n_rows)),
-        "user_session": [f"s_{i}" for i in range(n_rows)]
+        "event_time": [f"2019-10-01 10:{(i // 60):02d}:{(i % 60):02d} UTC" for i in range(chunk_size)],
+        "event_type": ["view"] * chunk_size,
+        "product_id": list(range(1, chunk_size + 1)),
+        "category_id": [100] * chunk_size,
+        "category_code": ["test"] * chunk_size,
+        "brand": ["brand_a"] * chunk_size,
+        "price": [50.0] * chunk_size,
+        "user_id": list(range(100, 100 + chunk_size)),
+        "user_session": [f"s_{i}" for i in range(chunk_size)]
     })
 
     out1, n_dup1 = gen._transform_chunk(
@@ -318,9 +320,12 @@ def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2):
         part_idx=0,
         duplicate_rate=dup_rate
     )
-    expected_dups = int(n_rows * dup_rate)
+    expected_dups = int(chunk_size * dup_rate)
     assert n_dup1 == expected_dups
-    assert len(out1) == n_rows + expected_dups
+    assert len(out1) == chunk_size + expected_dups
+
+    # Duplicate identity: exactly n_dup1 rows are exact duplicates of another row
+    assert int(out1.duplicated().sum()) == n_dup1
 
     # Determinism
     out2, n_dup2 = gen._transform_chunk(
@@ -332,3 +337,86 @@ def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2):
         duplicate_rate=dup_rate
     )
     pd.testing.assert_frame_equal(out1, out2)
+
+
+def test_batch_generator_dry_run_estimation(batch_generator_instance):
+    """Verify run_dry_run_estimation executes without error and prints estimation."""
+    batch_generator_instance.run_dry_run_estimation()
+
+
+def test_batch_generator_modes_initialization():
+    """Verify BatchDataGenerator can initialize in small, medium, and full modes."""
+    for mode in ["small", "medium", "full"]:
+        gen = BatchDataGenerator(config_path="config/generator_config.yaml", mode=mode, dry_run=True)
+        assert gen.mode == mode
+        assert gen.base_seed == 42
+
+
+def test_batch_generator_drift_injection(batch_generator_instance, sample_chunk_df):
+    """Verify that opt-in drift increases prices by drift_factor on Part 2."""
+    batch_generator_instance.drift_cfg = {"enabled": True, "column": "price", "drift_factor": 2.0}
+    transformed_df, _ = batch_generator_instance._transform_chunk(
+        df_chunk=sample_chunk_df.copy(),
+        is_part2=True,
+        replica_idx=0,
+        chunk_idx=0,
+        part_idx=0,
+        duplicate_rate=0.0
+    )
+    orig_prices = sample_chunk_df["price"].values
+    trans_prices = transformed_df["price"].values
+    np.testing.assert_allclose(trans_prices, orig_prices * 2.0, rtol=1e-2)
+
+
+def test_batch_generator_save_manifest_local(batch_generator_instance, tmp_path):
+    """Verify _save_manifest writes valid JSON manifest."""
+    manifest = {
+        "status": "COMPLETED",
+        "mode": "test",
+        "total_records": 100,
+        "execution_date": "2026-10-04"
+    }
+    batch_generator_instance._save_manifest(manifest)
+    import json
+    with open("data/generation_manifest.json", "r", encoding="utf-8") as f:
+        loaded = json.load(f)
+    assert loaded["status"] == "COMPLETED"
+    assert loaded["total_records"] == 100
+
+
+def test_stream_generator_checkpoint_and_manifest(tmp_path):
+    """Verify StreamDataGenerator checkpoint save/load and manifest generation."""
+    gen = StreamDataGenerator.__new__(StreamDataGenerator)
+    gen.checkpoint_file = str(tmp_path / "stream_checkpoint.json")
+    gen.topic_name = "test_topic"
+    gen.late_buffer = LateEventBuffer()
+    gen.stats = {
+        "start_time": time.time() - 10,
+        "total_produced": 500,
+        "normal_produced": 450,
+        "duplicates_injected": 25,
+        "late_delayed": 25,
+        "late_released": 20,
+        "burst_events": 50,
+        "last_event_time": "2019-10-26 12:00:00 UTC",
+        "byte_offset": 12345
+    }
+
+    # Test save checkpoint
+    gen._save_checkpoint(12345)
+    import json
+    with open(gen.checkpoint_file, "r", encoding="utf-8") as f:
+        cp = json.load(f)
+    assert cp["byte_offset"] == 12345
+
+    # Test delivery report
+    gen._delivery_report(None, None)
+    gen._delivery_report("Simulated delivery error", None)
+
+    # Test save stream manifest
+    gen.save_stream_manifest(burst_duration=30, burst_multiplier=5)
+    with open("data/stream_manifest.json", "r", encoding="utf-8") as f:
+        sm = json.load(f)
+    assert sm["topic"] == "test_topic"
+    assert sm["total_produced"] == 500
+    assert sm["burst_config"]["multiplier"] == 5
