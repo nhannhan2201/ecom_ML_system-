@@ -52,3 +52,8 @@ feature_store/data/registry.db*
 *.jar
 docker/flink_jars/
 docker/flink_plugins/
+
+# Archives
+*.zip
+*.tar.gz
+
