@@ -1,10 +1,13 @@
-# Bản đồ file hướng dẫn ở root
+# Project documentation map
 
-- [README.md](README.md): giới thiệu repo và điểm vào.
-- [WorkFlow.md](WorkFlow.md): bài toán và data flow mục tiêu đã thống nhất; không phải bằng chứng code chạy.
-- [DATA_FLOW.md](DATA_FLOW.md): đường nối trong source hiện có; chưa mặc định runtime đúng.
-- [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md): cách học, thứ tự milestone và tiến độ thực tế.
-- [RUBRIC.md](RUBRIC.md): tiêu chí rubric và trạng thái đối chiếu.
-- [AGENTS.md](AGENTS.md): quy tắc pair-programming bền vững cho agent.
+Read these files in order when you need the complete project picture:
 
-Tài liệu kỹ thuật theo từng technology và evidence mới được tạo trong [`docs/`](docs/INDEX.md) khi component tương ứng được học/kiểm chứng. API ghi chú trong [src/api/README.md](src/api/README.md) chưa chứng minh có inference service.
+1. [README.md](README.md) — project entry point and safety notes.
+2. [RUBRIC.md](RUBRIC.md) — what the two coursework workbooks require and what evidence counts.
+3. [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) — the agreed problem and intended system design.
+4. [DATA_CONTRACT.md](DATA_CONTRACT.md) — canonical datasets, schemas, grain, keys and timestamps; explicitly separates current from target.
+5. [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) — connections present in current source/config, not proof of runtime success.
+6. [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) — learning sequence and verified progress.
+7. [AGENTS.md](AGENTS.md) — instructions for agents maintaining these documents and pairing with the learner.
+
+Technology-specific explanations and fresh run evidence belong under [`docs/`](docs/INDEX.md), linked from its component index. The API README is currently a placeholder, not proof of a prediction service.

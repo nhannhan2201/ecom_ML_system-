@@ -2,7 +2,7 @@
 
 ## File này dùng để làm gì
 
-Đây là checklist các tiêu chí lấy từ workbook, không phải giáo án và không phải mô tả data flow. Mỗi dòng trả lời: rubric yêu cầu gì, code liên quan ở đâu, implementation đã được rà tới đâu, và có bằng chứng nào chứng minh tiêu chí đã chạy/đạt. Thứ tự học và tiến độ buổi học nằm trong [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md); thiết kế mục tiêu nằm trong [WorkFlow.md](WorkFlow.md); kết nối source nằm trong [DATA_FLOW.md](DATA_FLOW.md).
+Đây là checklist các tiêu chí lấy từ workbook, không phải giáo án và không phải hợp đồng schema. Mỗi dòng trả lời: rubric yêu cầu gì, code liên quan ở đâu, implementation đã được rà tới đâu, và có bằng chứng nào chứng minh tiêu chí đã chạy/đạt. Thứ tự học và tiến độ nằm trong [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md); thiết kế mục tiêu ở [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); schema/grain/key/timestamp ở [DATA_CONTRACT.md](DATA_CONTRACT.md); kết nối source ở [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md).
 
 ### Cách đọc trạng thái
 
@@ -15,7 +15,7 @@ Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI 
 
 Có code không có nghĩa đã implement đúng hoặc đã chạy. Không dùng kết quả cũ để quy điểm. Mỗi milestone sẽ cập nhật phần đã kiểm chứng, lệnh và kết quả thật. Offline generator yêu cầu tối thiểu 100GB; chưa có bằng chứng chạy lại ở scale đó.
 
-Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt buộc cửa sổ 30 ngày. Điều này không bỏ các tiêu chí feature store: offline feature history, incremental materialize offline→online, stream push vào offline và online, temporal columns, training/label join vẫn phải thực hiện và kiểm chứng. Xem [WorkFlow](WorkFlow.md); thiết kế này chưa được code/runtime xác nhận. Tiến độ học nằm ở [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md).
+Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt buộc cửa sổ 30 ngày. Điều này không bỏ các tiêu chí feature store: offline feature history, incremental materialize offline→online, stream push vào offline và online, temporal columns, training/label join vẫn phải thực hiện và kiểm chứng. Xem [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) and [DATA_CONTRACT.md](DATA_CONTRACT.md); thiết kế này chưa được code/runtime xác nhận. Tiến độ học nằm ở [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 
 | Dòng workbook | Nhóm | Yêu cầu | Điểm yêu cầu | Code | Kiểm chứng runtime/rubric | Nơi đối chiếu |
 | --- | --- | --- | --- | --- | --- | --- |

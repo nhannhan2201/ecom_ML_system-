@@ -13,4 +13,4 @@ Hiện chưa có tài liệu component mới được xác nhận trong cấu tr
 | Feast / Redis | TBD — add after feature-store milestone | Not verified |
 | Governance | TBD — add after DataHub verification | Not verified |
 
-Project-level design, current source map and learning progress live at repo root; see [INDEX.md](../INDEX.md).
+Project-level design, canonical contract, current source map, rubric and learning progress live at repo root; use the ordered [project index](../INDEX.md).

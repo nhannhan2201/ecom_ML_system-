@@ -1,38 +1,33 @@
 # ecom_ML_system
 
-Dự án dữ liệu clickstream thương mại điện tử REES46: generator → batch/stream processing → Lakehouse/DWH → feature store. Code hiện có sẽ được đọc, sửa hoặc thay từng phần theo hai workbook trong `rubic/`. Chưa xác nhận lại hệ thống end-to-end; bỏ qua Novel Ideas.
+An e-commerce event data-engineering coursework project using REES46 data, Kafka, Flink, Spark, a MinIO/Delta Lakehouse, PostgreSQL, Feast/Redis, Airflow and DataHub. The repository contains code for parts of this system; source inspection alone does not establish that a pipeline ran successfully. Novel Ideas rubric items are out of scope for the current learning plan.
 
-Baseline dự đoán đã thống nhất dùng bốn feature hành vi 15 phút để dự đoán purchase trong giờ kế tiếp. Xem [WorkFlow](WorkFlow.md) cho thiết kế mục tiêu; source hiện tại còn feature dài hạn cần được đối chiếu theo milestone.
+The agreed model baseline predicts whether a user will purchase in the hour after a decision time using four event-time features over the preceding 15 minutes. The current code still contains a 30-day batch feature path and labels based on candidate activity minutes. Read the current-versus-target distinction before treating these paths as equivalent.
 
-## Bắt đầu
+## Start here
 
-- [Mục lục dự án](INDEX.md)
-- [Bài toán và luồng mục tiêu](WorkFlow.md)
-- [Luồng hiện có theo source](DATA_FLOW.md)
-- [Cách học và tiến độ](LEARNING_ROADMAP.md)
-- [Theo dõi rubric](RUBRIC.md)
-- [Tài liệu kỹ thuật/evidence theo component](docs/INDEX.md)
+Read the [project documentation map](INDEX.md) in order. The central references are:
 
-```bash
-make test
-make lint
-```
+- [Rubric requirements and evidence status](RUBRIC.md)
+- [Target architecture](TARGET_ARCHITECTURE.md)
+- [Canonical data contract](DATA_CONTRACT.md)
+- [Current source implementation map](CURRENT_IMPLEMENTATION.md)
+- [Learning and implementation progress](IMPLEMENTATION_ROADMAP.md)
+- [Component documentation and evidence index](docs/INDEX.md)
 
-Unit tests không chứng minh pipeline đã chạy. Các target generator, Spark, Flink, Feast và governance có tác dụng ghi; chỉ chạy khi đã xác định dữ liệu và đích thử của milestone.
+## Repository layout
 
-## Cấu trúc giữ lại
-
-| Thư mục | Vai trò |
+| Path | Role |
 | --- | --- |
-| `rubic/` | Hai workbook yêu cầu |
-| `config/` | Cấu hình generator |
-| `src/` | Generator, Spark, Flink; API hiện là placeholder |
-| `dags/` | Airflow DP1–DP4 |
-| `docker/` | Compose, Dockerfiles và dependencies |
-| `feature_store/` | Feast definitions và consumers |
-| `governance/` | Catalog, lineage và contracts |
-| `scripts/` | Provision, vận hành, kiểm tra dịch vụ và smoke checks; một số thao tác có tác dụng ghi |
-| `tests/` | Unit/property/structure tests |
-| `docs/` | Ghi chú kỹ thuật theo technology và evidence mới được xác minh |
+| `rubic/` | Coursework workbooks |
+| `config/` | Generator and system configuration |
+| `src/` | Generator, Spark, Flink and API placeholder |
+| `dags/` | Airflow DP1–DP4 orchestration |
+| `docker/` | Compose stacks, Dockerfiles and service dependencies |
+| `feature_store/` | Feast definitions and materialization/retrieval/push jobs |
+| `governance/` | DataHub catalog, lineage and contract checks |
+| `scripts/` | Setup, operations and smoke checks; inspect effects before running |
+| `tests/` | Unit, property and structure tests |
+| `docs/` | Component explanations and new evidence after verification |
 
-Tài liệu/report và collector kết quả cũ được loại trong cleanup commit `ea66941`. Một số scripts smoke/ops còn cần rà soát riêng. Dữ liệu nguồn/local, checkpoints và dữ liệu dịch vụ được giữ nguyên. Không commit tự động.
+Commands such as `make test` and `make lint` verify code-level properties only; they do not prove that external services or data pipelines completed successfully. Generator, Spark, Flink, Feast and governance jobs can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.

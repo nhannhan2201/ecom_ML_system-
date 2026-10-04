@@ -1,29 +1,32 @@
-# Instructions for Codex agents
+# Instructions for Codex and other project agents
 
-This file explains how to use and maintain the project Markdown files. The learning and pair-programming method lives in [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md); follow it when guiding the learner.
+This file explains how to maintain the project's documentation and verified progress. Follow the root [INDEX.md](INDEX.md) reading order and use [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for the beginner-friendly, one-component-at-a-time learning process.
 
-## Read order at the start of a task
+## Documentation ownership
 
-1. Read this file and root [INDEX.md](INDEX.md).
-2. Read the current milestone and latest recorded verification in [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md).
-3. Consult [WorkFlow.md](WorkFlow.md) for agreed problem/design decisions, [DATA_FLOW.md](DATA_FLOW.md) for the source graph, and [RUBRIC.md](RUBRIC.md) for the criteria relevant to the task.
-4. Read [docs/INDEX.md](docs/INDEX.md) only when the task needs component-specific technical notes or evidence. Then read only the relevant note.
+- [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) is the agreed product/data design. Update it only when a design decision changes; do not use it to claim implementation or runtime success.
+- [DATA_CONTRACT.md](DATA_CONTRACT.md) is the canonical meaning/schema/grain/key/timestamp contract. It distinguishes CURRENT source declarations from TARGET requirements. Update it when inspection verifies a schema change or the learner approves a contract decision.
+- [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) maps current source/config connections and gaps. Update it after source audits or implementation changes; mark links as static source evidence unless runtime was actually verified.
+- [RUBRIC.md](RUBRIC.md) tracks workbook criteria and implementation/evidence status. Change only relevant criteria, and link actual evidence before marking a runtime requirement verified.
+- [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) keeps the learning order, current milestone, what was understood/changed, exact checks and results, docs updated, and unresolved questions. It is the progress log; do not create a report for every small code edit.
+- `docs/` contains reusable technology explanations and fresh evidence. Add/update a component note only when it adds useful technical understanding or records a real run; include version, code, command/input, time, result and limitations, then link it from [docs/INDEX.md](docs/INDEX.md).
+- [README.md](README.md) is the short project entry point. [INDEX.md](INDEX.md) is the root reading order; [docs/INDEX.md](docs/INDEX.md) indexes component notes/evidence.
 
-## Keep each file in its lane
+## Pair-programming workflow
 
-- `LEARNING_ROADMAP.md`: learning sequence, current milestone, what was understood/changed, commands actually run and their actual results, remaining questions, next step. Update after every completed learning milestone or when the chosen milestone/status changes. Do not record unrun checks as passed.
-- `WorkFlow.md`: agreed product/data problem, target tables and target flow. Change it only when a design decision changes; distinguish decisions from open questions. Never use it to claim code/runtime success.
-- `DATA_FLOW.md`: current static connections in source, entrypoints, outputs/consumers and known gaps. Update after inspecting code changes or completing a relevant source audit. Label source-confirmed links separately from runtime-verified behavior.
-- `RUBRIC.md`: workbook requirements and per-criterion implementation/evidence status. Update only the criteria touched by a milestone; include a real evidence reference before marking verified. Tests alone do not prove pipeline runtime or scale requirements.
-- `docs/`: technology/component explanations and fresh runtime evidence. Create or update a focused note when there is useful verified technical material; record version, code/files, command/input, date, result and limits. Link it from `docs/INDEX.md`. Do not copy the whole roadmap or target architecture into a component note.
-- `INDEX.md`: short navigation to root project guidance. `docs/INDEX.md`: index of component notes/evidence only.
+Teach in Vietnamese for a beginner. For one component or data slice per milestone: explain its purpose, problem, inputs/outputs and important files first; then explain its connections. Draw Mermaid from inspected code and distinguish source-declared links from runtime-verified behavior. Check dependency versions in project config before making version-specific claims. Trace input → schema → processing → output → consumer. Compare with relevant rubric rows, tests and traceable evidence; classify findings as verified, implemented but unverified, different from docs, or needing investigation.
 
-After each run, update the Roadmap with the exact command, exit/result, scope and limitations. If the run creates useful rubric evidence, add/link it under `docs/` and update the matching Rubric row. If a source relationship changed, update `DATA_FLOW.md`. If the agreed design changed, update `WorkFlow.md`. Keep changes limited to the affected files and preserve unrelated user edits.
+Give the learner one short chance to predict an input/output or explain a code section before revealing the answer. Before editing, explain a small example, the problem and invariant. Make one scoped change only. Afterwards walk the diff: purpose, callers/callees, input/output and debugging path. Run appropriate checks and record exact commands/results. Finish the milestone with paper-ready notes in the roadmap: purpose, input/output, diagram, key files, commands/checks, common failures, what was learned, changes/reasons and remaining uncertainty.
 
-## Operational safeguards
+## Evidence and safe operations
 
-- Teach in Vietnamese; never read or print `.env`, credentials, tokens or secrets. Do not commit for the learner.
-- Work on one component/data slice per milestone; skip Novel Ideas. Check imports and references from Makefile, Compose, DAGs, scripts, tests and docs before removing project files.
-- Do not reset, delete volumes/topics/checkpoints/data, overwrite outputs, run large generation, or incur cloud cost without explaining impact and receiving the learner's agreement.
-- Before running a command, identify whether it writes or changes external/local state. Prefer fixtures and isolated destinations.
-- Do not invent benchmark numbers, runtime status, or official-doc claims. Verify library versions from requirements/config/image before consulting matching official docs.
+- Preserve existing user changes. Inspect `git status` and diff before work; never commit for the learner.
+- Never read or print `.env`, credentials, tokens or secrets. Do not invent measurements, runtime status or official documentation claims.
+- Unit tests do not prove pipeline runtime or scale. Label static source inspection, unit verification, runtime readback and benchmark evidence separately.
+- Read only files needed for the active milestone. Before cleanup, check Python imports, Makefile, Compose, DAGs, scripts, tests and docs references; present cleanup candidates and reasons before removal.
+- Before commands, explain whether they write local/external state. Prefer small fixtures and isolated destinations. Never reset state, delete volumes/topics/checkpoints/data, overwrite datasets, run large generation or incur cloud costs without explaining the impact and receiving agreement.
+- Do not run unrelated tests for a documentation-only task. For code changes, use the repository's relevant checks and record any baseline failure accurately.
+
+## Updating docs after a run or code change
+
+Update only the owning references: implementation changes can affect `CURRENT_IMPLEMENTATION.md` and `DATA_CONTRACT.md`; design decisions affect `TARGET_ARCHITECTURE.md`; a completed learning milestone updates `IMPLEMENTATION_ROADMAP.md`; newly satisfied rubric criteria update `RUBRIC.md`; reusable component explanations/evidence go in `docs/`. Then check links and `git diff --check`. Never mark a claim verified merely because the command was launched; require its actual result and, for external systems, a suitable readback.
