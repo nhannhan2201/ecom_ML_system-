@@ -1,21 +1,24 @@
 """
 ================================================================================
 MODULE: BATCH DATA GENERATOR (OFFLINE DATA FEEDER & BENCHMARK SCALER)
-Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Tác giả: Hoàng Minh Nhân
+Project: E-Commerce Real-Time Purchase Propensity Prediction System
+Author: Hoang Minh Nhan
 
-Mục tiêu thiết kế:
-1. Simulate Skew & High Cardinality (tận dụng phân phối tự nhiên từ REES46)
+Design objectives:
+1. Simulate Skew & High Cardinality (inheriting natural REES46 distributions + synthetic hot keys)
 2. Simulate Schema Evolution:
-   - Part 1 (01/10 -> 15/10): Đúng 9 cột nguyên bản (hoàn toàn CHƯA CÓ discount_percent)
-   - Part 2 (16/10 -> 25/10): Đúng 10 cột (bổ sung cột discount_percent)
-3. Simulate Another Offline Data Problem: Tiêm ~2% Duplicate Rate vào cả 2 phần
-4. Using Generator Configuration: Đọc toàn bộ tham số từ config/generator_config.yaml
-5. Store Data into MinIO: Upload lên MinIO bucket 'ecommerce-raw'
-   - Chế độ small/medium: upload raw_events_old.csv & raw_events_new.csv
-   - Chế độ full: streaming chunked scaling deterministic replay đạt target >=100GB
-     chia nhỏ thành các part files raw_events_old_part-XXXXX.csv & raw_events_new_part-XXXXX.csv
-     mà KHÔNG BAO GIỜ nạp toàn bộ 100GB vào RAM (Zero-OOM streaming architecture).
+   - Part 1 (01/10 -> 15/10): Exactly 9 canonical columns (no discount_percent)
+   - Part 2 (16/10 -> 25/10): Exactly 10 canonical columns (with discount_percent)
+3. Simulate Offline Data Quality Issues: Inject ~2% duplicate records into both parts
+4. Generator Configuration: Read parameters from config/generator_config.yaml
+5. Store Data into MinIO: Upload to MinIO bucket 'ecommerce-raw'
+   - Small mode: upload raw_events_old.csv & raw_events_new.csv
+   - Medium / Full mode: chunked scaling with deterministic replay up to target GB
+     without holding the entire dataset in RAM (Zero-OOM streaming architecture).
+6. High-Cardinality Scaling:
+   - Deterministic user_id mapping for replica > 0 based on user hash (new_user_pct).
+   - Deterministic product price jitter (+-price_jitter_pct) for replica > 0 to support SCD2.
+   - Deterministic seed sequence per (base_seed, replica_idx, chunk_idx, part_idx).
 ================================================================================
 """
 
@@ -24,19 +27,20 @@ import sys
 import io
 import gc
 import time
-import yaml
+import json
+import shutil
 import logging
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import yaml
 import pandas as pd
 import numpy as np
 import boto3
 from botocore.exceptions import ClientError
 
-# Thiết lập logging chuẩn hóa
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
+    format="%(asctime)s [%(levelname)s] [BatchDataGenerator] %(message)s",
     handlers=[logging.StreamHandler(sys.stdout)]
 )
 logger = logging.getLogger("BatchDataGenerator")
@@ -50,8 +54,8 @@ CANONICAL_10_COLUMNS = CANONICAL_9_COLUMNS + ["discount_percent"]
 
 class BatchDataGenerator:
     """
-    Bộ điều khiển phát sinh dữ liệu Offline/Batch, tiêm lỗi Rubric và mở rộng Benchmark
-    hỗ trợ 3 chế độ: small (1M), medium (5M), full (chunked deterministic replay >= 100GB).
+    Controller for offline batch data generation, fault injection, and benchmark scaling.
+    Supports small (1M sample), medium (5GB), and full (>=100GB benchmark scale) modes.
     """
 
     def __init__(
@@ -61,26 +65,37 @@ class BatchDataGenerator:
         sample_size: int = None,
         target_size_gb: float = None,
         skew_override: bool = False,
-        dry_run: bool = False
+        dry_run: bool = False,
+        stats_only: bool = False
     ):
         self.config_path = config_path
         self.config = self._load_config()
         self.batch_cfg = self.config.get("batch_generator", {})
         self.minio_cfg = self.batch_cfg.get("minio", {})
         self.dry_run = dry_run
+        self.stats_only = stats_only
 
-        # Cấu hình Skew & Drift opt-in
+        # Randomness & seed configuration
+        self.base_seed = int(self.batch_cfg.get("base_seed", 42))
+
+        # Replica configuration for scaling cardinality and SCD2 attributes
+        replica_cfg = self.batch_cfg.get("replica", {})
+        self.new_user_pct = int(replica_cfg.get("new_user_pct", 30))
+        self.id_offset = int(replica_cfg.get("id_offset", 1_000_000_000))
+        self.price_jitter_pct = float(replica_cfg.get("price_jitter_pct", 5))
+
+        # Fault injection configuration
         fault_inj = self.batch_cfg.get("fault_injection", {})
         self.skew_cfg = dict(fault_inj.get("skew", {"enabled": False}))
         if skew_override:
             self.skew_cfg["enabled"] = True
+        self.sessions_per_key = int(self.skew_cfg.get("sessions_per_key", 50))
         self.drift_cfg = dict(fault_inj.get("drift", {"enabled": False}))
 
-        # Xác định chế độ
+        # Mode determination
         self.mode = mode or self.batch_cfg.get("mode", "small")
         modes_def = self.batch_cfg.get("modes_definition", {})
 
-        # Cấu hình chunk & benchmark
         self.chunk_size = self.batch_cfg.get("chunk_size", 250000)
         self.part_size_mb = self.batch_cfg.get("part_size_mb", 500)
         self.time_shift_days = 30
@@ -91,8 +106,14 @@ class BatchDataGenerator:
             self.target_size_gb = None
         elif self.mode == "medium":
             medium_def = modes_def.get("medium", {})
-            self.sample_size = sample_size or (medium_def.get("sample_size", 5000000) if isinstance(medium_def, dict) else medium_def)
-            self.target_size_gb = None
+            if isinstance(medium_def, dict) and "target_size_gb" in medium_def:
+                self.target_size_gb = target_size_gb or medium_def.get("target_size_gb", 5)
+                self.sample_size = None
+                self.time_shift_days = medium_def.get("time_shift_days", 30)
+                self.part_size_mb = medium_def.get("part_size_mb", 500)
+            else:
+                self.sample_size = sample_size or 5000000
+                self.target_size_gb = target_size_gb
         elif self.mode == "full":
             self.sample_size = None
             full_def = modes_def.get("full", {})
@@ -107,54 +128,50 @@ class BatchDataGenerator:
             self.target_size_gb = target_size_gb
 
         self.input_csv = self._resolve_input_csv() if not self.dry_run else self.batch_cfg.get("input_csv", "2019-Oct.csv")
-        self.s3_client = self._init_s3_client() if not self.dry_run else None
+        self.s3_client = self._init_s3_client() if (not self.dry_run and not self.stats_only) else None
 
         logger.info(
-            f"Khởi tạo BatchGenerator: mode='{self.mode}', dry_run={self.dry_run}, "
-            f"skew_enabled={self.skew_cfg.get('enabled', False)}, "
+            f"Init BatchGenerator: mode='{self.mode}', dry_run={self.dry_run}, stats_only={self.stats_only}, "
+            f"skew_enabled={self.skew_cfg.get('enabled', False)}, base_seed={self.base_seed}, "
             f"sample_size={f'{self.sample_size:,}' if self.sample_size else 'N/A'}, "
-            f"target_size_gb={self.target_size_gb or 'N/A'}, "
-            f"chunk_size={self.chunk_size:,}, input_csv='{self.input_csv}'"
+            f"target_size_gb={self.target_size_gb or 'N/A'}, chunk_size={self.chunk_size:,}"
         )
 
     def _load_config(self) -> dict:
-        """Đọc và kiểm tra file cấu hình YAML."""
+        """Load and parse YAML configuration."""
         if not os.path.exists(self.config_path):
             alt_path = os.path.join("..", self.config_path)
             if os.path.exists(alt_path):
                 self.config_path = alt_path
             else:
-                raise FileNotFoundError(f"Không tìm thấy file cấu hình tại: {self.config_path}")
+                raise FileNotFoundError(f"Config file not found at: {self.config_path}")
 
-        logger.info(f"Đang tải cấu hình từ: {self.config_path}")
+        logger.info(f"Loading configuration from: {self.config_path}")
         with open(self.config_path, "r", encoding="utf-8") as f:
             return yaml.safe_load(f)
 
     def _resolve_input_csv(self) -> str:
-        """Xác định đường dẫn file dữ liệu gốc 2019-Oct.csv."""
+        """Locate raw REES46 CSV file (2019-Oct.csv)."""
         csv_name = self.batch_cfg.get("input_csv", "2019-Oct.csv")
         if os.path.exists(csv_name):
             return csv_name
         alt = os.path.join("..", csv_name)
         if os.path.exists(alt):
             return alt
-        # Nếu chưa tải file lớn, thông báo rõ ràng
         raise FileNotFoundError(
-            f"Không tìm thấy file dữ liệu gốc: '{csv_name}'. "
-            "Vui lòng tải file REES46 '2019-Oct.csv' từ Kaggle và đặt vào thư mục gốc dự án."
+            f"Source file '{csv_name}' not found. Please place '2019-Oct.csv' in the project root."
         )
 
     def _init_s3_client(self):
-        """Khởi tạo Boto3 S3 Client kết nối tới MinIO."""
+        """Initialize Boto3 S3 Client for MinIO."""
         endpoint = os.environ.get("MINIO_ENDPOINT") or self.minio_cfg.get("endpoint_url", "http://localhost:9000")
         access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
         secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
-        if not access_key:
-            raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-        if not secret_key:
-            raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+        if not access_key or not secret_key:
+            logger.warning("MinIO credentials not set in environment. S3 client initialized with fallback.")
+            access_key = access_key or "minioadmin"
+            secret_key = secret_key or "minioadmin"
 
-        logger.info(f"Kết nối tới MinIO tại: {endpoint}")
         return boto3.client(
             "s3",
             endpoint_url=endpoint,
@@ -164,11 +181,13 @@ class BatchDataGenerator:
         )
 
     def _ensure_bucket_exists(self, bucket_name: str):
-        """Đảm bảo MinIO bucket tồn tại."""
+        """Ensure destination MinIO bucket exists."""
+        if not self.s3_client:
+            return
         try:
             self.s3_client.head_bucket(Bucket=bucket_name)
         except ClientError:
-            logger.info(f"Bucket '{bucket_name}' chưa tồn tại. Đang tự động tạo mới...")
+            logger.info(f"Bucket '{bucket_name}' does not exist. Creating...")
             self.s3_client.create_bucket(Bucket=bucket_name)
 
     def _transform_chunk(
@@ -176,31 +195,61 @@ class BatchDataGenerator:
         df_chunk: pd.DataFrame,
         is_part2: bool,
         replica_idx: int = 0,
+        chunk_idx: int = 0,
+        part_idx: int = 0,
         duplicate_rate: float = 0.02
     ) -> tuple[pd.DataFrame, int]:
         """
-        Xử lý từng chunk dữ liệu:
-        1. Áp dụng deterministic time-shift nếu là replica >= 1 (giữ nguyên phân phối skew & cardinality)
-        2. Áp dụng Schema Evolution (Part 1: 9 cột, Part 2: 10 cột với discount_percent)
-        3. Tiêm ~2% duplicates riêng biệt
-        Trả về: (chunk_transformed, n_duplicates_injected)
+        Process a single data chunk:
+        1. Initialize deterministic RNG via SeedSequence(base_seed, replica_idx, chunk_idx, part_idx).
+        2. Time shift, user ID offset mapping, price jitter, session suffix for replica > 0.
+        3. Schema Evolution (Part 1: 9 cols, Part 2: 10 cols with discount_percent).
+        4. Skew injection with consistent user_session mapping.
+        5. Duplicate injection (~2%).
         """
         df = df_chunk.copy()
+        rng = np.random.default_rng(np.random.SeedSequence([self.base_seed, replica_idx, chunk_idx, part_idx]))
 
-        # 1. Deterministic Replay / Time Shift (nếu replica > 0)
+        # 1. Deterministic Replay / Scaling (replica > 0)
         if replica_idx > 0:
-            # Shift event_time một khoảng thời gian cố định
+            # 1a. Time shift
             shift_delta = timedelta(days=replica_idx * self.time_shift_days)
             try:
-                # Đổi chuỗi UTC sang datetime, shift, rồi đổi lại chuỗi UTC
                 raw_time = df["event_time"].astype(str).str.replace(" UTC", "")
                 dt_series = pd.to_datetime(raw_time, format="%Y-%m-%d %H:%M:%S", errors="coerce")
                 dt_shifted = dt_series + shift_delta
                 df["event_time"] = dt_shifted.dt.strftime("%Y-%m-%d %H:%M:%S UTC")
             except Exception as e:
-                logger.warning(f"Lỗi khi time shift replica {replica_idx}: {e}")
+                logger.warning(f"Error shifting timestamp for replica {replica_idx}: {e}")
 
-            # Đổi user_session deterministically để tránh xung đột session ID qua các tháng replayed
+            # 1b. Deterministic User ID Mapping (Vectorized 64-bit numpy hash)
+            # If hash(user_id, replica) % 100 < new_user_pct: new ID = user_id + replica * id_offset
+            # Consistent across all rows for the same user.
+            u_arr = df["user_id"].fillna(0).astype(np.int64).values
+            u_uint = u_arr.astype(np.uint64)
+            r_uint = np.uint64(replica_idx)
+            with np.errstate(over="ignore"):
+                h_user = (u_uint ^ (r_uint * np.uint64(0x9E3779B97F4A7C15))) * np.uint64(0xBF58476D1CE4E5B9)
+                h_user = (h_user ^ (h_user >> np.uint64(30))) * np.uint64(0x94D049BB133111EB)
+                h_user = h_user ^ (h_user >> np.uint64(31))
+            mask_new_user = (h_user % np.uint64(100)) < np.uint64(self.new_user_pct)
+            new_uid = u_arr + (replica_idx * self.id_offset)
+            df["user_id"] = np.where(mask_new_user, new_uid, u_arr)
+
+            # 1c. Deterministic Product Price Jitter (+-price_jitter_pct)
+            # price' = round(price * (1 + j), 2) for SCD2 price history simulation
+            if "price" in df.columns and "product_id" in df.columns:
+                p_arr = df["product_id"].fillna(0).astype(np.int64).values
+                p_uint = p_arr.astype(np.uint64)
+                with np.errstate(over="ignore"):
+                    h_prod = (p_uint ^ (r_uint * np.uint64(0x85EBCA6B))) * np.uint64(0xC2B2AE35)
+                    h_prod = (h_prod ^ (h_prod >> np.uint64(16))) * np.uint64(0x27D4EB2F)
+                    h_prod = h_prod ^ (h_prod >> np.uint64(15))
+                # Ratio in [-1.0, 1.0]
+                ratio = ((h_prod % np.uint64(10001)).astype(np.float64) / 5000.0 - 1.0) * (self.price_jitter_pct / 100.0)
+                df["price"] = np.round(df["price"].values * (1.0 + ratio), 2)
+
+            # 1d. Distinct session suffix
             df["user_session"] = df["user_session"].astype(str) + f"-r{replica_idx}"
 
         # 2. Schema Evolution
@@ -209,18 +258,17 @@ class BatchDataGenerator:
         col_name = se_cfg.get("new_column", "discount_percent")
 
         if not is_part2:
-            # Part 1: Đảm bảo đúng 9 cột nguyên bản (KHÔNG CÓ discount_percent)
+            # Part 1: Canonical 9 columns (no discount_percent)
             if col_name in df.columns:
                 df = df.drop(columns=[col_name])
             df = df[[c for c in CANONICAL_9_COLUMNS if c in df.columns]]
         else:
-            # Part 2: Bổ sung cột discount_percent (10 cột)
-            np.random.seed(42 + replica_idx)
-            df[col_name] = np.random.choice(discount_vals, size=len(df))
+            # Part 2: Canonical 10 columns (with discount_percent)
+            df[col_name] = rng.choice(discount_vals, size=len(df))
             cols_order = [c for c in CANONICAL_10_COLUMNS if c in df.columns]
             df = df[cols_order]
 
-        # 3. Skew Injection (Opt-in bổ sung)
+        # 3. Skew Injection (Synthetic hot keys with consistent sessions)
         if self.skew_cfg.get("enabled", False):
             skew_col = self.skew_cfg.get("column", "user_id")
             hot_keys = self.skew_cfg.get("top_k_keys", [999999999, 888888888, 777777777])
@@ -228,59 +276,68 @@ class BatchDataGenerator:
             if skew_col in df.columns and hot_keys and hot_ratio > 0:
                 n_skew = int(len(df) * hot_ratio)
                 if n_skew > 0:
-                    np.random.seed(42 + replica_idx)
-                    skew_indices = np.random.choice(df.index, size=n_skew, replace=False)
-                    df.loc[skew_indices, skew_col] = np.random.choice(hot_keys, size=n_skew)
+                    skew_indices = rng.choice(df.index, size=n_skew, replace=False)
+                    chosen_hot_keys = rng.choice(hot_keys, size=n_skew)
+                    chosen_session_ids = rng.integers(0, self.sessions_per_key, size=n_skew)
+                    df.loc[skew_indices, skew_col] = chosen_hot_keys
+                    hot_sessions = [f"hot-{k}-{s}" for k, s in zip(chosen_hot_keys, chosen_session_ids)]
+                    df.loc[skew_indices, "user_session"] = hot_sessions
 
-        # 4. Concept / Data Drift (Opt-in cho Final Coursework)
+        # 4. Concept / Data Drift (Opt-in)
         if self.drift_cfg.get("enabled", False) and is_part2:
             drift_col = self.drift_cfg.get("column", "price")
             drift_factor = float(self.drift_cfg.get("drift_factor", 1.5))
             if drift_col in df.columns:
                 df[drift_col] = (df[drift_col] * drift_factor).round(2)
 
-        # 5. Tiêm Duplicate riêng biệt (~2%)
+        # 5. Duplicate Injection (~2%)
         n_dup = 0
         if duplicate_rate > 0:
             n_dup = int(len(df) * duplicate_rate)
             if n_dup > 0:
-                dup_sample = df.sample(n=n_dup, replace=True, random_state=42 + replica_idx)
+                dup_indices = rng.choice(len(df), size=n_dup, replace=True)
+                dup_sample = df.iloc[dup_indices]
                 df = pd.concat([df, dup_sample], ignore_index=True)
-                df = df.sample(frac=1.0, random_state=42 + replica_idx).reset_index(drop=True)
+                # Shuffle deterministically
+                shuffle_indices = rng.permutation(len(df))
+                df = df.iloc[shuffle_indices].reset_index(drop=True)
 
         return df, n_dup
 
     def _upload_bytes_to_minio(self, data_bytes: bytes, object_name: str, bucket: str) -> bool:
-        """Upload raw bytes lên MinIO."""
+        """Upload raw bytes to MinIO."""
+        if self.stats_only or not self.s3_client:
+            return False
         self._ensure_bucket_exists(bucket)
         bio = io.BytesIO(data_bytes)
         self.s3_client.upload_fileobj(bio, bucket, object_name)
         return True
 
     def _save_manifest(self, manifest_data: dict):
-        """Lưu generation manifest dưới dạng JSON local và upload lên MinIO."""
-        import json
+        """Save generation manifest locally and upload to MinIO."""
         os.makedirs("data", exist_ok=True)
         local_path = "data/generation_manifest.json"
         with open(local_path, "w", encoding="utf-8") as f:
             json.dump(manifest_data, f, indent=2, ensure_ascii=False)
-        logger.info(f"Đã lưu generation manifest cục bộ tại: {local_path}")
+        logger.info(f"Saved generation manifest locally at: {local_path}")
 
-        if self.s3_client:
+        if self.s3_client and not self.stats_only:
             bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
             manifest_obj = "batch/generation_manifest.json"
             try:
-                self._upload_bytes_to_minio(json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8"), manifest_obj, bucket)
-                logger.info(f"Đã upload manifest lên s3://{bucket}/{manifest_obj}")
+                self._upload_bytes_to_minio(
+                    json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8"),
+                    manifest_obj,
+                    bucket
+                )
+                logger.info(f"Uploaded manifest to s3://{bucket}/{manifest_obj}")
             except Exception as e:
-                logger.warning(f"Không thể upload manifest lên MinIO: {e}")
+                logger.warning(f"Failed to upload manifest to MinIO: {e}")
 
     def run_dry_run_estimation(self):
         """
-        Ước tính số liệu cho chế độ 100GB full benchmark, kiểm tra dung lượng đĩa trống.
-        Rubric: Implement Data Generator >= 100GB Benchmark Scale.
+        Estimate metrics for benchmark scale and verify local disk space.
         """
-        import shutil
         target_gb = self.target_size_gb or 100.0
         target_bytes = int(target_gb * 1024 * 1024 * 1024)
         avg_row_bytes = 131.5
@@ -288,68 +345,79 @@ class BatchDataGenerator:
         part_size_mb = self.part_size_mb or 500
         estimated_parts = int((target_gb * 1024) / part_size_mb)
 
+        # Cardinality estimation
+        # REES46 Oct has ~3.02M unique users in 42.4M rows
+        base_unique_users = 3022290
+        raw_dataset_gb = 5.57
+        replicas_count = max(1, int(np.ceil(target_gb / raw_dataset_gb)))
+        if replicas_count > 1:
+            est_unique_users = int(base_unique_users * (1.0 + (replicas_count - 1) * (self.new_user_pct / 100.0)))
+        else:
+            est_unique_users = int(base_unique_users * min(1.0, (self.sample_size or estimated_rows) / 42400000))
+
         total_disk, used_disk, free_disk = shutil.disk_usage(".")
         free_disk_gb = free_disk / (1024 ** 3)
         required_disk_gb = target_gb * 1.3
 
         print("\n" + "=" * 85)
-        print(f"📊 DRY-RUN ESTIMATION REPORT: BENCHMARK FULL MODE ({target_gb:.1f} GB)")
+        print(f"DRY-RUN ESTIMATION REPORT: BENCHMARK MODE ({target_gb:.1f} GB)")
         print("=" * 85)
-        print("1. QUY MÔ DỮ LIỆU ƯỚC TÍNH:")
-        print(f"   • Dung lượng mục tiêu:           {target_gb:.1f} GB ({target_bytes:,} bytes)")
-        print(f"   • Tổng số bản ghi ước tính:      ~{estimated_rows:,} dòng")
-        print(f"   • Stage 1 (raw_events_old, 9 cột): ~{estimated_rows // 2:,} dòng (~{target_gb / 2:.1f} GB)")
-        print(f"   • Stage 2 (raw_events_new, 10 cột): ~{estimated_rows // 2:,} dòng (~{target_gb / 2:.1f} GB)")
-        print(f"   • Kích thước mỗi part file:      {part_size_mb} MB")
-        print(f"   • Tổng số part files dự kiến:    ~{estimated_parts} files (~{estimated_parts // 2} parts/stage)")
+        print("1. ESTIMATED DATA SCALE:")
+        print(f"   - Target volume:                 {target_gb:.1f} GB ({target_bytes:,} bytes)")
+        print(f"   - Estimated total records:       ~{estimated_rows:,} rows")
+        print(f"   - Part 1 (raw_events_old, 9 cols): ~{estimated_rows // 2:,} rows (~{target_gb / 2:.1f} GB)")
+        print(f"   - Part 2 (raw_events_new, 10 cols): ~{estimated_rows // 2:,} rows (~{target_gb / 2:.1f} GB)")
+        print(f"   - Part file size:                {part_size_mb} MB")
+        print(f"   - Expected part files:           ~{estimated_parts} files")
         print("-" * 85)
-        print("2. KIỂM TRA TÀI NGUYÊN ĐĨA CỤC BỘ (DISK SPACE CHECK):")
-        print(f"   • Dung lượng đĩa khả dụng:       {free_disk_gb:.2f} GB")
-        print(f"   • Dung lượng an toàn tối thiểu:  {required_disk_gb:.2f} GB (1.3x target)")
+        print("2. CARDINALITY & REPLICA PROJECTION:")
+        print(f"   - Estimated Replicas:            {replicas_count}")
+        print(f"   - New User ID Ratio per Replica: {self.new_user_pct}% (Offset: {self.id_offset:,})")
+        print(f"   - Estimated Unique Users:        ~{est_unique_users:,} unique user_ids")
+        print(f"   - Product Price Jitter:          +-{self.price_jitter_pct}% (SCD2 version multiplier: {replicas_count}x)")
+        print("-" * 85)
+        print("3. DISK SPACE REQUIREMENT CHECK:")
+        print(f"   - Available disk space:          {free_disk_gb:.2f} GB")
+        print(f"   - Minimum safe requirement:      {required_disk_gb:.2f} GB (1.3x target)")
         if free_disk_gb < required_disk_gb:
-            print(f"   ⚠️  CẢNH BÁO: Dung lượng đĩa trống ({free_disk_gb:.2f} GB) < 1.3x mục tiêu ({required_disk_gb:.2f} GB)!")
-            print("       Khuyến nghị: Chạy full 100GB trên Cloud/VM chuyên dụng có gắn volume >= 150GB.")
+            print(f"   WARNING: Available disk ({free_disk_gb:.2f} GB) < 1.3x target ({required_disk_gb:.2f} GB)!")
+            print("   Recommendation: Use --stats-only to measure cardinality without writing data.")
         else:
-            print("   ✅ Đĩa trống hiện tại đủ điều kiện thực thi an toàn (> 1.3x target).")
-        print("-" * 85)
-        print("3. LỆNH CHẠY THỰC TẾ:")
-        print("   • Chạy kiểm chứng code path (1GB): python3 src/generator/batch_generator.py --mode full --target-size-gb 1")
-        print("   • Chạy toàn bộ 100GB (Cloud/VM):   python3 src/generator/batch_generator.py --mode full --target-size-gb 100")
+            print("   Status: Sufficient disk space available (> 1.3x target).")
         print("=" * 85 + "\n")
-
 
     def run_sample_mode(self):
         """
-        Thực thi chế độ lấy mẫu (small: 1M dòng hoặc medium: 5M dòng) bằng Chunked Reading.
-        Giữ nguyên chuẩn định dạng đơn file (raw_events_old.csv và raw_events_new.csv)
-        để bảo toàn 100% khả năng tương thích với Airflow, Spark và MinIO.
+        Execute sample generation (small: 1M or medium sample) with chunked reading.
         """
         sample_size = self.sample_size or 1000000
         half_sample = sample_size // 2
         effective_date = self.batch_cfg.get("fault_injection", {}).get("schema_evolution", {}).get("effective_date", "2019-10-16")
-        skip_start = 20500000  # Dòng bắt đầu ngày 16/10 trong 2019-Oct.csv
+        skip_start = 20500000
         bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
         p1_obj = self.minio_cfg.get("part1_object_name", "batch/raw_events_old.csv")
         p2_obj = self.minio_cfg.get("part2_object_name", "batch/raw_events_new.csv")
         dup_rate = self.batch_cfg.get("fault_injection", {}).get("duplicate", {}).get("rate", 0.02)
 
         start_time = time.time()
-        logger.info(f"=== BẮT ĐẦU CHẾ ĐỘ {self.mode.upper()} ({sample_size:,} dòng, chunk_size={self.chunk_size:,}) ===")
+        logger.info(f"Starting {self.mode.upper()} mode ({sample_size:,} rows, chunk_size={self.chunk_size:,})...")
 
-        # --- XỬ LÝ PART 1: 01/10 -> 15/10 (Schema cũ 9 cột) ---
-        logger.info(f"[Part 1]: Đang đọc & xử lý theo chunk {half_sample:,} dòng (Giai đoạn trước {effective_date})...")
+        # Part 1: 01/10 -> 15/10 (9 columns)
+        logger.info(f"[Part 1]: Reading & processing {half_sample:,} rows (Pre-{effective_date})...")
         p1_chunks = []
         rows_read_p1 = 0
         p1_dups = 0
 
-        for chunk in pd.read_csv(self.input_csv, chunksize=self.chunk_size):
+        for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, chunksize=self.chunk_size)):
             needed = half_sample - rows_read_p1
             if needed <= 0:
                 break
             if len(chunk) > needed:
                 chunk = chunk.iloc[:needed]
 
-            processed_chunk, n_dup = self._transform_chunk(chunk, is_part2=False, duplicate_rate=dup_rate)
+            processed_chunk, n_dup = self._transform_chunk(
+                chunk, is_part2=False, replica_idx=0, chunk_idx=chunk_idx, part_idx=0, duplicate_rate=dup_rate
+            )
             p1_chunks.append(processed_chunk)
             rows_read_p1 += len(chunk)
             p1_dups += n_dup
@@ -359,26 +427,33 @@ class BatchDataGenerator:
         del p1_chunks
         gc.collect()
 
-        logger.info(f"[Part 1]: Đã xử lý xong {len(df_p1):,} dòng ({df_p1.shape[1]} cột). Đang upload lên s3://{bucket}/{p1_obj}...")
         p1_csv_bytes = df_p1.to_csv(index=False, encoding="utf-8").encode("utf-8")
-        self._upload_bytes_to_minio(p1_csv_bytes, p1_obj, bucket)
         p1_size_mb = len(p1_csv_bytes) / (1024 * 1024)
+        if not self.stats_only:
+            logger.info(f"[Part 1]: Uploading {len(df_p1):,} rows ({df_p1.shape[1]} cols) to s3://{bucket}/{p1_obj}...")
+            self._upload_bytes_to_minio(p1_csv_bytes, p1_obj, bucket)
+            # Also save local copies for quick offline access
+            os.makedirs("data", exist_ok=True)
+            with open("data/raw_events_old.csv", "wb") as f_local:
+                f_local.write(p1_csv_bytes)
         del p1_csv_bytes
 
-        # --- XỬ LÝ PART 2: 16/10 -> 25/10 (Schema mới 10 cột có discount_percent) ---
-        logger.info(f"[Part 2]: Đang đọc & xử lý theo chunk {half_sample:,} dòng từ mốc {effective_date} (skip {skip_start:,} dòng)...")
+        # Part 2: 16/10 -> 25/10 (10 columns with discount_percent)
+        logger.info(f"[Part 2]: Reading & processing {half_sample:,} rows from {effective_date} (skip {skip_start:,} rows)...")
         p2_chunks = []
         rows_read_p2 = 0
         p2_dups = 0
 
-        for chunk in pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size):
+        for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)):
             needed = half_sample - rows_read_p2
             if needed <= 0:
                 break
             if len(chunk) > needed:
                 chunk = chunk.iloc[:needed]
 
-            processed_chunk, n_dup = self._transform_chunk(chunk, is_part2=True, duplicate_rate=dup_rate)
+            processed_chunk, n_dup = self._transform_chunk(
+                chunk, is_part2=True, replica_idx=0, chunk_idx=chunk_idx, part_idx=0, duplicate_rate=dup_rate
+            )
             p2_chunks.append(processed_chunk)
             rows_read_p2 += len(chunk)
             p2_dups += n_dup
@@ -388,45 +463,61 @@ class BatchDataGenerator:
         del p2_chunks
         gc.collect()
 
-        logger.info(f"[Part 2]: Đã xử lý xong {len(df_p2):,} dòng ({df_p2.shape[1]} cột). Đang upload lên s3://{bucket}/{p2_obj}...")
         p2_csv_bytes = df_p2.to_csv(index=False, encoding="utf-8").encode("utf-8")
-        self._upload_bytes_to_minio(p2_csv_bytes, p2_obj, bucket)
         p2_size_mb = len(p2_csv_bytes) / (1024 * 1024)
+        if not self.stats_only:
+            logger.info(f"[Part 2]: Uploading {len(df_p2):,} rows ({df_p2.shape[1]} cols) to s3://{bucket}/{p2_obj}...")
+            self._upload_bytes_to_minio(p2_csv_bytes, p2_obj, bucket)
+            with open("data/raw_events_new.csv", "wb") as f_local:
+                f_local.write(p2_csv_bytes)
         del p2_csv_bytes
 
-        # Báo cáo kết quả
         total_time = time.time() - start_time
         total_rows = len(df_p1) + len(df_p2)
         total_dups = p1_dups + p2_dups
         actual_dup_rate = (total_dups / total_rows) * 100 if total_rows > 0 else 0.0
 
+        # Calculate actual skew if enabled
+        actual_skew_stats = {}
+        if self.skew_cfg.get("enabled", False):
+            skew_col = self.skew_cfg.get("column", "user_id")
+            hot_keys = self.skew_cfg.get("top_k_keys", [])
+            comb_users = pd.concat([df_p1[skew_col], df_p2[skew_col]], ignore_index=True)
+            hot_counts = comb_users.isin(hot_keys).sum()
+            actual_skew_stats = {
+                "hot_keys": hot_keys,
+                "hot_rows": int(hot_counts),
+                "hot_ratio_actual": round(float(hot_counts / total_rows), 4) if total_rows > 0 else 0.0
+            }
+
         print("\n" + "=" * 85)
-        print(f"📊 BÁO CÁO BATCH DATA GENERATOR ({self.mode.upper()} MODE - CHUNKED STREAMING)")
+        print(f"BATCH DATA GENERATOR REPORT ({self.mode.upper()} MODE)")
         print("=" * 85)
-        print("1. THỜI GIAN & QUY MÔ THỰC HIỆN:")
-        print(f"   • Thời gian tạo & tải lên MinIO:   {total_time:.2f} giây")
-        print(f"   • Tổng số bản ghi sinh ra:        {total_rows:,} dòng ({p1_size_mb + p2_size_mb:.2f} MB)")
-        print(f"   • Part 1 (Old Schema):             {len(df_p1):,} dòng ({df_p1.shape[1]} cột) -> s3://{bucket}/{p1_obj}")
-        print(f"   • Part 2 (New Schema):             {len(df_p2):,} dòng ({df_p2.shape[1]} cột) -> s3://{bucket}/{p2_obj}")
+        print("1. VOLUME & TIMING:")
+        print(f"   - Execution time:                {total_time:.2f} seconds")
+        print(f"   - Total records generated:       {total_rows:,} rows ({p1_size_mb + p2_size_mb:.2f} MB)")
+        print(f"   - Part 1 (Old Schema, 9 cols):   {len(df_p1):,} rows -> s3://{bucket}/{p1_obj}")
+        print(f"   - Part 2 (New Schema, 10 cols):  {len(df_p2):,} rows -> s3://{bucket}/{p2_obj}")
         print("-" * 85)
-        print("2. MINH CHỨNG SCHEMA EVOLUTION (2đ Rubric):")
-        print(f"   • Cột trong Part 1 (01/10 - 15/10): {list(df_p1.columns)}")
-        print(f"   • Cột trong Part 2 (16/10 - 25/10): {list(df_p2.columns)}")
-        print("   • Cột mới xuất hiện:                'discount_percent' (Part 1 hoàn toàn chưa có cột này)")
+        print("2. SCHEMA EVOLUTION:")
+        print(f"   - Part 1 columns: {list(df_p1.columns)}")
+        print(f"   - Part 2 columns: {list(df_p2.columns)}")
+        print("   - New column: 'discount_percent' (present only in Part 2)")
         print("-" * 85)
-        print("3. MINH CHỨNG TIÊM LỖI DUPLICATE (2đ Rubric):")
-        print(f"   • Tổng số bản ghi duplicate tiêm:  {total_dups:,} dòng")
-        print(f"   • Tỷ lệ duplicate thực nghiệm:      {actual_dup_rate:.2f}% (Đạt mục tiêu cấu hình ~2%)")
+        print("3. FAULT INJECTION (DUPLICATES & SKEW):")
+        print(f"   - Injected duplicates:           {total_dups:,} rows")
+        print(f"   - Actual duplicate rate:         {actual_dup_rate:.2f}% (Target: ~2%)")
+        if actual_skew_stats:
+            print(f"   - Injected Hot Keys:             {actual_skew_stats['hot_keys']}")
+            print(f"   - Actual Hot Key Ratio:          {actual_skew_stats['hot_ratio_actual'] * 100:.2f}%")
         print("-" * 85)
-        print("4. SKEW & HIGH CARDINALITY:")
-        view_pct = (df_p1["event_type"].value_counts().get("view", 0) / len(df_p1)) * 100
-        print(f"   • Tỷ lệ sự kiện 'view':             {view_pct:.2f}% (Class Imbalance tự nhiên)")
-        print(f"   • Unique user_id trong mẫu:         {df_p1['user_id'].nunique() + df_p2['user_id'].nunique():,}")
+        print("4. CARDINALITY (SAMPLE):")
+        u_comb = pd.concat([df_p1["user_id"], df_p2["user_id"]], ignore_index=True)
+        print(f"   - Unique user_id in sample:      {u_comb.nunique():,}")
         print("=" * 85 + "\n")
 
-        # Lưu Generation Manifest
         manifest = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode,
             "sample_size": sample_size,
             "total_rows": total_rows,
@@ -442,21 +533,33 @@ class BatchDataGenerator:
                 "new_column": "discount_percent"
             },
             "skew_config": self.skew_cfg,
-            "drift_config": self.drift_cfg
+            "skew_actual": actual_skew_stats,
+            "drift_config": self.drift_cfg,
+            "stats_only": self.stats_only
         }
         self._save_manifest(manifest)
 
-    def run_benchmark_full_mode(self):
+    def run_benchmark_scale_mode(self):
         """
-        Thực thi chế độ Benchmark quy mô lớn (>= 100GB Benchmark Scale) bằng kiến trúc:
-        - Chunked streaming pipeline không nạp 100GB vào RAM (Zero-OOM)
-        - Deterministic time-shifted replay qua các replica (bảo toàn 100% phân phối skew, category, brand)
-        - Ngắt chuẩn theo bytes mục tiêu (authoritative byte-based stopping condition)
-        - Xuất thành nhiều part files (raw_events_old_part-XXXXX.csv & raw_events_new_part-XXXXX.csv)
+        Execute large scale benchmark mode (medium 5GB or full >=100GB).
+        Uses chunked streaming, deterministic user ID offset mapping, product price jitter,
+        and authoritative byte-based stopping conditions.
         """
-        target_gb = self.target_size_gb or 100
+        target_gb = self.target_size_gb or 100.0
         target_bytes_total = int(target_gb * 1024 * 1024 * 1024)
         target_bytes_per_stage = target_bytes_total // 2
+
+        # Check disk space if not stats_only
+        if not self.stats_only:
+            _, _, free_disk = shutil.disk_usage(".")
+            free_disk_gb = free_disk / (1024 ** 3)
+            required_disk_gb = target_gb * 1.3
+            if free_disk_gb < required_disk_gb:
+                raise RuntimeError(
+                    f"Available disk space ({free_disk_gb:.2f} GB) is less than safe requirement "
+                    f"1.3x target ({required_disk_gb:.2f} GB). Execution aborted to prevent disk exhaustion. "
+                    f"Use --stats-only to profile without disk overhead."
+                )
 
         bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
         dup_rate = self.batch_cfg.get("fault_injection", {}).get("duplicate", {}).get("rate", 0.02)
@@ -464,11 +567,10 @@ class BatchDataGenerator:
         skip_start = 20500000
 
         start_time = time.time()
-        logger.info(f"=== BẮT ĐẦU CHẾ ĐỘ FULL BENCHMARK (Mục tiêu: {target_gb:.1f} GB, chia đều 2 giai đoạn) ===")
-        logger.info(f"Target bytes mỗi giai đoạn: {target_bytes_per_stage / (1024**3):.2f} GB ({target_bytes_per_stage:,} bytes)")
+        logger.info(f"Starting {self.mode.upper()} mode (Target: {target_gb:.1f} GB across 2 stages)...")
 
-        # --- GIAI ĐOẠN 1: RAW_EVENTS_OLD (01/10 -> 15/10 - 9 CỘT) ---
-        logger.info("\n--- [STAGE 1/2]: SINH BENCHMARK RAW_EVENTS_OLD (9 CỘT, PRE-16/10) ---")
+        # STAGE 1: RAW_EVENTS_OLD (9 COLS)
+        logger.info(f"[STAGE 1/2]: Generating raw_events_old (Pre-{effective_date}, 9 cols)...")
         p1_bytes_written = 0
         p1_rows_written = 0
         p1_dups_injected = 0
@@ -476,23 +578,27 @@ class BatchDataGenerator:
         replica_idx = 0
 
         while p1_bytes_written < target_bytes_per_stage:
-            logger.info(f" -> Bắt đầu Replica {replica_idx} cho Stage 1 (Time shift: +{replica_idx * self.time_shift_days} ngày)...")
+            logger.info(f" -> Replica {replica_idx} for Stage 1 (Time shift: +{replica_idx * self.time_shift_days} days)...")
             part_buffer = io.StringIO()
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
 
-            for chunk in pd.read_csv(self.input_csv, chunksize=self.chunk_size):
+            for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, chunksize=self.chunk_size)):
                 if p1_bytes_written >= target_bytes_per_stage:
                     break
 
-                # Lọc ngày trước 16/10
                 chunk_dates = chunk["event_time"].astype(str).str[:10]
                 chunk_valid = chunk[chunk_dates < effective_date]
                 if chunk_valid.empty:
                     continue
 
                 processed_chunk, n_dup = self._transform_chunk(
-                    chunk_valid, is_part2=False, replica_idx=replica_idx, duplicate_rate=dup_rate
+                    chunk_valid,
+                    is_part2=False,
+                    replica_idx=replica_idx,
+                    chunk_idx=chunk_idx,
+                    part_idx=p1_part_idx,
+                    duplicate_rate=dup_rate
                 )
                 csv_str = processed_chunk.to_csv(index=False, header=is_first_chunk_in_part, encoding="utf-8")
                 chunk_bytes_len = len(csv_str.encode("utf-8"))
@@ -507,29 +613,29 @@ class BatchDataGenerator:
                 del chunk, chunk_valid, processed_chunk
                 gc.collect()
 
-                # Nếu part đạt ngưỡng part_size_mb, upload ngay và giải phóng buffer
                 if part_buffer_bytes >= self.part_size_mb * 1024 * 1024:
                     part_obj_name = f"batch/raw_events_old_part-{p1_part_idx:05d}.csv"
-                    logger.info(f"   [Upload Stage 1] Part {p1_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB) -> s3://{bucket}/{part_obj_name}")
-                    self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
+                    logger.info(f"   [Upload Stage 1] Part {p1_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB)")
+                    if not self.stats_only:
+                        self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
                     p1_part_idx += 1
                     part_buffer.close()
                     part_buffer = io.StringIO()
                     part_buffer_bytes = 0
                     is_first_chunk_in_part = True
 
-            # Xả buffer dở dang nếu còn dữ liệu
             if part_buffer_bytes > 0:
                 part_obj_name = f"batch/raw_events_old_part-{p1_part_idx:05d}.csv"
-                logger.info(f"   [Upload Stage 1 Cuối] Part {p1_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB) -> s3://{bucket}/{part_obj_name}")
-                self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
+                logger.info(f"   [Upload Stage 1 End] Part {p1_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB)")
+                if not self.stats_only:
+                    self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
                 p1_part_idx += 1
                 part_buffer.close()
 
             replica_idx += 1
 
-        # --- GIAI ĐOẠN 2: RAW_EVENTS_NEW (16/10 -> 25/10 - 10 CỘT CÓ DISCOUNT_PERCENT) ---
-        logger.info("\n--- [STAGE 2/2]: SINH BENCHMARK RAW_EVENTS_NEW (10 CỘT, POST-16/10) ---")
+        # STAGE 2: RAW_EVENTS_NEW (10 COLS)
+        logger.info(f"[STAGE 2/2]: Generating raw_events_new (Post-{effective_date}, 10 cols)...")
         p2_bytes_written = 0
         p2_rows_written = 0
         p2_dups_injected = 0
@@ -537,23 +643,27 @@ class BatchDataGenerator:
         replica_idx = 0
 
         while p2_bytes_written < target_bytes_per_stage:
-            logger.info(f" -> Bắt đầu Replica {replica_idx} cho Stage 2 (Time shift: +{replica_idx * self.time_shift_days} ngày)...")
+            logger.info(f" -> Replica {replica_idx} for Stage 2 (Time shift: +{replica_idx * self.time_shift_days} days)...")
             part_buffer = io.StringIO()
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
 
-            for chunk in pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size):
+            for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)):
                 if p2_bytes_written >= target_bytes_per_stage:
                     break
 
-                # Lọc ngày trong khoảng 16/10 đến 25/10
                 chunk_dates = chunk["event_time"].astype(str).str[:10]
                 chunk_valid = chunk[(chunk_dates >= effective_date) & (chunk_dates <= "2019-10-25")]
                 if chunk_valid.empty:
                     continue
 
                 processed_chunk, n_dup = self._transform_chunk(
-                    chunk_valid, is_part2=True, replica_idx=replica_idx, duplicate_rate=dup_rate
+                    chunk_valid,
+                    is_part2=True,
+                    replica_idx=replica_idx,
+                    chunk_idx=chunk_idx,
+                    part_idx=p2_part_idx,
+                    duplicate_rate=dup_rate
                 )
                 csv_str = processed_chunk.to_csv(index=False, header=is_first_chunk_in_part, encoding="utf-8")
                 chunk_bytes_len = len(csv_str.encode("utf-8"))
@@ -570,8 +680,9 @@ class BatchDataGenerator:
 
                 if part_buffer_bytes >= self.part_size_mb * 1024 * 1024:
                     part_obj_name = f"batch/raw_events_new_part-{p2_part_idx:05d}.csv"
-                    logger.info(f"   [Upload Stage 2] Part {p2_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB) -> s3://{bucket}/{part_obj_name}")
-                    self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
+                    logger.info(f"   [Upload Stage 2] Part {p2_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB)")
+                    if not self.stats_only:
+                        self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
                     p2_part_idx += 1
                     part_buffer.close()
                     part_buffer = io.StringIO()
@@ -580,8 +691,9 @@ class BatchDataGenerator:
 
             if part_buffer_bytes > 0:
                 part_obj_name = f"batch/raw_events_new_part-{p2_part_idx:05d}.csv"
-                logger.info(f"   [Upload Stage 2 Cuối] Part {p2_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB) -> s3://{bucket}/{part_obj_name}")
-                self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
+                logger.info(f"   [Upload Stage 2 End] Part {p2_part_idx:05d} ({part_buffer_bytes / (1024**2):.2f} MB)")
+                if not self.stats_only:
+                    self._upload_bytes_to_minio(part_buffer.getvalue().encode("utf-8"), part_obj_name, bucket)
                 p2_part_idx += 1
                 part_buffer.close()
 
@@ -595,30 +707,27 @@ class BatchDataGenerator:
         actual_dup_rate = (total_dups / total_rows) * 100 if total_rows > 0 else 0.0
 
         print("\n" + "=" * 90)
-        print("🏆 BÁO CÁO BENCHMARK DATA GENERATOR (100GB BENCHMARK SCALE - RUBRIC DE)")
+        print(f"BENCHMARK DATA GENERATOR REPORT ({self.mode.upper()} MODE)")
         print("=" * 90)
-        print("1. QUY MÔ & TỐC ĐỘ:")
-        print(f"   • Dung lượng thực tế tạo ra:     {total_gb:.2f} GB ({total_bytes:,} bytes)")
-        print(f"   • Tổng số bản ghi sinh ra:       {total_rows:,} dòng")
-        print(f"   • Thời gian thực thi:            {total_time:.2f}s ({total_time / 60:.2f} phút)")
-        print(f"   • Thông lượng ghi trung bình:    {total_gb / (total_time / 3600):.2f} GB/giờ")
+        print("1. SCALE & THROUGHPUT:")
+        print(f"   - Total volume generated:        {total_gb:.2f} GB ({total_bytes:,} bytes)")
+        print(f"   - Total records generated:       {total_rows:,} rows")
+        print(f"   - Elapsed time:                  {total_time:.2f}s ({total_time / 60:.2f} min)")
+        print(f"   - Throughput:                    {total_gb / (total_time / 3600):.2f} GB/hour")
         print("-" * 90)
-        print("2. CẤU TRÚC PARTITION TRÊN MINIO LUKAS LAKEHOUSE:")
-        print(f"   • Stage 1 (raw_events_old, 9 cột):  {p1_part_idx} part files ({p1_bytes_written / (1024**3):.2f} GB, {p1_rows_written:,} dòng)")
-        print(f"     Ví dụ: s3://{bucket}/batch/raw_events_old_part-00000.csv ...")
-        print(f"   • Stage 2 (raw_events_new, 10 cột): {p2_part_idx} part files ({p2_bytes_written / (1024**3):.2f} GB, {p2_rows_written:,} dòng)")
-        print(f"     Ví dụ: s3://{bucket}/batch/raw_events_new_part-00000.csv ...")
+        print("2. PARTITION STRUCTURE ON MINIO / LAKEHOUSE:")
+        print(f"   - Stage 1 (raw_events_old, 9 cols):  {p1_part_idx} parts ({p1_bytes_written / (1024**3):.2f} GB, {p1_rows_written:,} rows)")
+        print(f"   - Stage 2 (raw_events_new, 10 cols): {p2_part_idx} parts ({p2_bytes_written / (1024**3):.2f} GB, {p2_rows_written:,} rows)")
         print("-" * 90)
-        print("3. ĐẶC TÍNH RUBRIC ĐƯỢC BẢO TOÀN:")
-        print("   • Schema Evolution: 9 cột trước 16/10 vs 10 cột (có discount_percent) sau 16/10")
-        print(f"   • Duplicate Rate thực tế: {actual_dup_rate:.2f}% (Độc lập với Replay replicas)")
-        print("   • Skew & High Cardinality: Bảo toàn 100% phân phối tự nhiên của REES46")
+        print("3. QUALITY & SCHEMA VERIFICATION:")
+        print("   - Schema Evolution: 9 cols pre-16/10 vs 10 cols post-16/10")
+        print(f"   - Actual Duplicate Rate: {actual_dup_rate:.2f}%")
+        print(f"   - Stats Only Mode: {self.stats_only}")
         print("=" * 90 + "\n")
 
-        # Lưu Generation Manifest
         manifest = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "mode": "full",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "mode": self.mode,
             "target_size_gb": target_gb,
             "total_rows": total_rows,
             "total_bytes": total_bytes,
@@ -634,28 +743,30 @@ class BatchDataGenerator:
                 "new_column": "discount_percent"
             },
             "skew_config": self.skew_cfg,
-            "drift_config": self.drift_cfg
+            "drift_config": self.drift_cfg,
+            "stats_only": self.stats_only
         }
         self._save_manifest(manifest)
 
     def run(self):
-        """Hàm điều phối thực thi theo chế độ đã cấu hình."""
+        """Dispatch execution based on mode."""
         if self.dry_run:
             self.run_dry_run_estimation()
-        elif self.mode == "full":
-            self.run_benchmark_full_mode()
+        elif self.mode in ("full", "medium") and self.target_size_gb:
+            self.run_benchmark_scale_mode()
         else:
             self.run_sample_mode()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="E-Commerce Batch Data Generator & Benchmark Scaler")
-    parser.add_argument("--mode", choices=["small", "medium", "full"], default=None, help="Generation mode: small (1M), medium (5M), full (>=100GB benchmark)")
-    parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium)")
-    parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB (for full mode)")
+    parser.add_argument("--mode", choices=["small", "medium", "full"], default=None, help="Generation mode: small (1M), medium (5GB), full (>=100GB)")
+    parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium sample)")
+    parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB")
     parser.add_argument("--config", default="config/generator_config.yaml", help="Path to config YAML")
     parser.add_argument("--skewed", action="store_true", help="Enable opt-in synthetic skew injection")
     parser.add_argument("--dry-run", action="store_true", help="Estimate metrics and disk requirements without writing data")
+    parser.add_argument("--stats-only", action="store_true", help="Run transformations and write manifest without uploading to MinIO")
     args = parser.parse_args()
 
     gen = BatchDataGenerator(
@@ -664,7 +775,7 @@ if __name__ == "__main__":
         sample_size=args.sample_size,
         target_size_gb=args.target_size_gb,
         skew_override=args.skewed,
-        dry_run=args.dry_run
+        dry_run=args.dry_run,
+        stats_only=args.stats_only
     )
     gen.run()
-

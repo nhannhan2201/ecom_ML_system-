@@ -77,13 +77,18 @@ gen-data-skewed: ## Generate batch dataset with injected key skew (opt-in)
 	@echo "--> Generating skewed batch dataset..."
 	$(PYTHON_EXEC) src/generator/batch_generator.py --mode small --skewed
 
-gen-data-full: ## Dry-run / generate batch dataset in full 100GB mode
-	@echo "--> Running batch generator full mode (dry-run check)..."
-	$(PYTHON_EXEC) src/generator/batch_generator.py --mode full --dry-run
+gen-data-medium: ## Generate batch dataset in medium mode (~5GB)
+	@echo "--> Generating medium batch dataset (~5GB)..."
+	$(PYTHON_EXEC) src/generator/batch_generator.py --mode medium
+
+TARGET_GB ?= 100
+gen-data-full: ## Generate batch dataset in full benchmark mode (TARGET_GB, default 100)
+	@echo "--> Running batch generator full mode (TARGET_GB=$(TARGET_GB))..."
+	$(PYTHON_EXEC) src/generator/batch_generator.py --mode full --target-size-gb $(TARGET_GB)
 
 gen-stream: ## Run real-time streaming event pusher to Kafka
 	@echo "--> Starting streaming events pusher..."
-	$(PYTHON_EXEC) src/generator/stream_generator.py --mode push
+	$(PYTHON_EXEC) src/generator/stream_generator.py
 
 spark-baseline: ## Execute Spark Bronze-to-Silver baseline job (unoptimized)
 	@echo "--> Running Spark baseline job..."
@@ -132,3 +137,11 @@ docker-size: ## Compare and display Docker image sizes for Airflow Spark image
 profile-data: ## Profile generated data distributions, skew, duplicates, and schema
 	@echo "--> Profiling generated dataset..."
 	$(PYTHON_EXEC) scripts/profile_generated_data.py
+
+profile-stream: ## Profile streaming generator manifest, late arrival and duplicates
+	@echo "--> Profiling streaming dataset..."
+	$(PYTHON_EXEC) scripts/profile_stream_data.py
+
+measure-cardinality: ## Measure high-cardinality replica scaling and SCD2 versions
+	@echo "--> Measuring high-cardinality replica scaling..."
+	$(PYTHON_EXEC) scripts/measure_scale_cardinality.py

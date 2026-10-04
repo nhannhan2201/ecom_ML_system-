@@ -65,7 +65,20 @@ Redis (Online Store)
 
 ---
 
-## 2. GIẢI THÍCH CHI TIẾT TỪNG CHẶNG TRUYỀN DỮ LIỆU
+## 2. DÒNG THỜI GIAN DỮ LIỆU THỐNG NHẤT (DATA TIMELINE)
+
+Hệ thống phân định ranh giới thời gian chặt chẽ giữa các tầng dữ liệu nhằm tránh chồng lấn và rò rỉ dữ liệu (data leakage):
+
+| Phân Vùng Dữ Liệu | Mốc Thời Gian Phủ | Số Cột & Đặc Tính Schema | Nơi Lưu Trữ / Vận Chuyển | Vai Trò & Pipeline Sử Dụng |
+| :--- | :--- | :--- | :--- | :--- |
+| **Batch Part 1** | `2019-10-01` → `2019-10-15` | 9 cột canonical (chưa có `discount_percent`) | `s3://ecommerce-raw/batch/raw_events_old.csv` | Pipeline DP1, DP2 (Bronze & Silver Lakehouse) |
+| **Batch Part 2** | `2019-10-16` → `2019-10-25` | 10 cột canonical (bổ sung `discount_percent`) | `s3://ecommerce-raw/batch/raw_events_new.csv` | Pipeline DP1, DP2 (Kiểm chứng Schema Evolution) |
+| **Stream Ingest** | `2019-10-26` → `2019-10-31` | 10 cột canonical (kế thừa `discount_percent`) | Kafka topic `ecommerce_stream_events` | Flink Streaming, Real-time Features, DP1 Staging |
+| **Feature / Labels** | `as_of_date = 2019-10-26` | 30 ngày lịch sử (Batch) & 15 phút trượt (Stream) | Lakehouse `feat_user_30d`, `user_labels`, Redis | DP3 (Batch Features), DP4 (Feast Materialize) |
+
+---
+
+## 3. GIẢI THÍCH CHI TIẾT TỪNG CHẶNG TRUYỀN DỮ LIỆU
 
 ### Chặng 1: Cấp liệu thô & Tiêm lỗi thực nghiệm (Generation Stage)
 1. **Luồng Batch (Offline):**

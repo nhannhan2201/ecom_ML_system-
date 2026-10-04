@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-10-04T03:20:35.799599Z",
+  "topic": "ecommerce_stream_events",
+  "total_produced": 2024,
+  "normal_produced": 1886,
+  "duplicates_injected": 24,
+  "duplicate_rate_actual": 1.1858,
+  "late_delayed": 114,
+  "late_released": 114,
+  "delay_distribution_minutes": {
+    "min": 5.0,
+    "median": 8.0,
+    "max": 10.0,
+    "mean": 7.48,
+    "count": 114
+  },
+  "burst_events": 1000,
+  "burst_config": {
+    "multiplier": 30,
+    "duration_seconds": 600
+  },
+  "last_event_time": "2019-10-26 00:14:02 UTC",
+  "elapsed_seconds": 5.84,
+  "average_throughput_msg_per_sec": 346.46
+}

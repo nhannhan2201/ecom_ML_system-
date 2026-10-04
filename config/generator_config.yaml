@@ -13,19 +13,28 @@ batch_generator:
   
   # Chế độ sinh dữ liệu (modes: small | medium | full)
   # - small:  1,000,000 rows (~131.5 MB) phục vụ phát triển & kiểm thử nhanh (Default)
-  # - medium: 5,000,000 rows (~657.5 MB) phục vụ integration test
+  # - medium: ~5 GB benchmark dataset phục vụ integration & scale test
   # - full:   >=100GB benchmark dataset (streaming chunked, không giữ toàn bộ 100GB trong RAM)
   mode: "small"
+  base_seed: 42
   modes_definition:
     small:
       sample_size: 1000000
     medium:
-      sample_size: 5000000
+      target_size_gb: 5
+      time_shift_days: 30
+      part_size_mb: 500
     full:
       target_size_gb: 100
       time_shift_days: 30
       part_size_mb: 500
   chunk_size: 250000
+
+  # Cấu hình mở rộng Cardinality & Thuộc tính cho Replica > 0
+  replica:
+    new_user_pct: 30         # 30% người dùng được gán ID mới (tăng cardinality theo quy mô)
+    id_offset: 1000000000    # Độ dịch chuyển ID xác định: user_id' = user_id + r * id_offset
+    price_jitter_pct: 5      # Dao động giá ±5% theo product để tạo phiên bản SCD2
 
   # Quy mô mẫu lấy để kiểm thử (đặt null hoặc 0 nếu muốn chạy toàn bộ 42.4 triệu dòng)
   sample_size: 1000000
@@ -49,7 +58,7 @@ batch_generator:
     # - product_id: 63,000+ unique products
     # - user_session: 226,000+ unique sessions
 
-  # Tiêm 2 lỗi còn thiếu theo đúng yêu cầu của Rubric
+  # Tiêm lỗi theo chuẩn Rubric
   fault_injection:
     # Lỗi 1: Duplicate Rate (Rubric yêu cầu: 2% duplicate)
     duplicate:
@@ -68,7 +77,8 @@ batch_generator:
       enabled: false
       column: "user_id"
       top_k_keys: [999999999, 888888888, 777777777]
-      hot_ratio: 0.30  # 30% dòng nhận hot keys
+      hot_ratio: 0.30       # 30% dòng nhận hot keys
+      sessions_per_key: 50  # Số session cố định cho mỗi hot key (hot-{key}-{n})
 
     # Tùy chọn 4: Concept/Data Drift (Opt-in cho giai đoạn Final Coursework)
     drift:
