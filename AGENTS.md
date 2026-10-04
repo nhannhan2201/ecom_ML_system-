@@ -1,52 +1,29 @@
-# Agent Handoff Guide - ecom_ML_system
+# Instructions for Codex agents
 
-## Project Overview
-An end-to-end e-commerce real-time & batch data engineering platform (EDAI K11 DE Mini-Coursework) ingesting REES46 events, processing via Spark & Flink, storing across a MinIO Delta Lakehouse and PostgreSQL DWH, serving features via Feast/Redis, and governed by DataHub & Airflow.
+This file explains how to use and maintain the project Markdown files. The learning and pair-programming method lives in [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md); follow it when guiding the learner.
 
-## Technology Stack
-- **Engine**: Apache Spark 3.5.0 (Delta Lake 3.0.0), Apache Flink 1.17.1 (PyFlink)
-- **Storage**: MinIO S3 (Bronze/Silver/Gold Lakehouse), PostgreSQL 15 (Star Schema DWH), Redis 7 (Feast Online Store)
-- **Messaging & Governance**: Apache Kafka 7.5.0, Apache Airflow 2.7.3, DataHub GMS 0.13, Feast 0.38
+## Read order at the start of a task
 
-## Repository Layout
-- `config/`: System and generator YAML configuration files.
-- `dags/`: Airflow DAG pipelines (DP1: Ingest, DP2: Clean/DWH, DP3: Feat/Labels, DP4: Feast Materialize).
-- `docker/`: Compose stacks for all infrastructure and optimized multistage Dockerfile.
-- `docs/`: Learning design, current code map, and verified progress (start at `docs/INDEX.md`).
-- `feature_store/`: Feast definitions (`features.py`), configuration, materialization, and retrieval scripts.
-- `governance/`: Declarative DataHub metadata catalog (`catalog.py`) and assertion verifier (`verify_contracts.py`).
-- `notebooks/`: Verification and data exploration Jupyter notebooks.
-- `scripts/`: Operational entrypoints and smoke checks; check callers before changing or removing one.
-- `src/`: Core application source code (`generator/`, `spark/`, `flink/`, `api/`).
-- `tests/`: Automated unit and DAG structure test suite (pytest, hypothesis).
+1. Read this file and root [INDEX.md](INDEX.md).
+2. Read the current milestone and latest recorded verification in [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md).
+3. Consult [WorkFlow.md](WorkFlow.md) for agreed problem/design decisions, [DATA_FLOW.md](DATA_FLOW.md) for the source graph, and [RUBRIC.md](RUBRIC.md) for the criteria relevant to the task.
+4. Read [docs/INDEX.md](docs/INDEX.md) only when the task needs component-specific technical notes or evidence. Then read only the relevant note.
 
-## Core Commands (`Makefile`)
-- `make help`: List all available automation targets.
-- `make up-infra` / `make up-flink` / `make up-airflow` / `make up-datahub`: Spin up Docker compose stacks.
-- `make gen-data` / `make gen-data-skewed`: Generate small batch dataset with optional skew injection.
-- `make spark-opt`: Run optimized Spark Bronze-to-Silver & Gold Lakehouse transformation.
-- `make flink-opt`: Submit optimized Flink streaming job (parallelism=3, hopping window).
-- `make governance-verify`: Validate Lakehouse data contracts and publish assertions to DataHub.
-- `make test` / `make lint`: Run automated pytest suite with coverage and ruff linter.
+## Keep each file in its lane
 
-## Architectural Conventions
-1. **Naming**: Strict prefixing: `raw_` (Bronze), `stg_` (Silver), `dim_` (Gold DWH Dim), `fact_` (Gold DWH Fact), `feat_` (Gold Feast Feature View).
-2. **Feature Store Temporal Schema**: All `feat_` tables must provide `event_timestamp` and `created` columns.
-3. **Secrets & Config**: Zero hardcoded credentials or machine paths (`/home/...`). All secrets via `.env` or Airflow Connections (`minio_s3_conn`, `postgres_dwh`, `redis_default`).
-4. **Code Quality**: Every file requires a module header docstring; every class and function requires descriptive docstrings.
-5. **Documentation**: Keep one source of truth per topic; distinguish code inspection, tests, runtime checks, and measurements.
+- `LEARNING_ROADMAP.md`: learning sequence, current milestone, what was understood/changed, commands actually run and their actual results, remaining questions, next step. Update after every completed learning milestone or when the chosen milestone/status changes. Do not record unrun checks as passed.
+- `WorkFlow.md`: agreed product/data problem, target tables and target flow. Change it only when a design decision changes; distinguish decisions from open questions. Never use it to claim code/runtime success.
+- `DATA_FLOW.md`: current static connections in source, entrypoints, outputs/consumers and known gaps. Update after inspecting code changes or completing a relevant source audit. Label source-confirmed links separately from runtime-verified behavior.
+- `RUBRIC.md`: workbook requirements and per-criterion implementation/evidence status. Update only the criteria touched by a milestone; include a real evidence reference before marking verified. Tests alone do not prove pipeline runtime or scale requirements.
+- `docs/`: technology/component explanations and fresh runtime evidence. Create or update a focused note when there is useful verified technical material; record version, code/files, command/input, date, result and limits. Link it from `docs/INDEX.md`. Do not copy the whole roadmap or target architecture into a component note.
+- `INDEX.md`: short navigation to root project guidance. `docs/INDEX.md`: index of component notes/evidence only.
 
-## Operational Rules for Agents
-- **Zero Hallucination**: Never fabricate benchmark numbers or timings. Use `TBD (run <cmd> to measure)` if not executed.
-- **Rubric-Driven**: Work on one component/data slice per milestone, excluding Novel Ideas. Track rubric criteria in [RUBRIC.md](RUBRIC.md) and learning progress in [LEARNING_ROADMAP](docs/LEARNING_ROADMAP.md).
-- **Targeted Reading**: Consult `docs/INDEX.md` before reading documentation. Avoid scanning `docs/screenshots/` or `*.ipynb` unless strictly needed.
-- **Verification**: Always run `make test` and `make lint` before concluding any code changes.
+After each run, update the Roadmap with the exact command, exit/result, scope and limitations. If the run creates useful rubric evidence, add/link it under `docs/` and update the matching Rubric row. If a source relationship changed, update `DATA_FLOW.md`. If the agreed design changed, update `WorkFlow.md`. Keep changes limited to the affected files and preserve unrelated user edits.
 
-## Learning & Pair-programming
-- Teach in Vietnamese for a beginner. First explain the component's purpose, problem, input/output and relevant code files; explain connections to other components afterward.
-- Draw Mermaid from inspected code, naming roles and files. Distinguish code-confirmed connections from documentation-only descriptions; neither proves runtime success.
-- Determine versions from requirements/config and consult matching official Quickstart/docs. Trace input → processing → output → consumer using only milestone-relevant files; compare code with docs, tests and traceable evidence.
-- Classify findings: verified correct / implemented but unverified / differs from documentation / needs investigation. Give the learner a chance to predict or explain before revealing the answer, with at most one short question at a time.
-- Before editing, explain a small example, problem and invariant. Make one scoped change; then review the diff together: purpose, callers/callees, input/output and how to trace/debug failures. Record actual verification commands and results.
-- End each milestone with paper-ready notes: purpose, input/output, diagram, key files, commands, checks, common failures, learning, changes/reasons and remaining uncertainty. Update the roadmap rather than creating a report for every small change.
-- Preserve existing changes; never read/print secrets or commit for the learner. Before cleanup, list candidates/reasons and check imports, Makefile, Compose, DAGs, scripts and docs. Explain impacts and obtain agreement before reset, deleting volumes/topics/checkpoints/data, overwriting data or large generator runs.
+## Operational safeguards
+
+- Teach in Vietnamese; never read or print `.env`, credentials, tokens or secrets. Do not commit for the learner.
+- Work on one component/data slice per milestone; skip Novel Ideas. Check imports and references from Makefile, Compose, DAGs, scripts, tests and docs before removing project files.
+- Do not reset, delete volumes/topics/checkpoints/data, overwrite outputs, run large generation, or incur cloud cost without explaining impact and receiving the learner's agreement.
+- Before running a command, identify whether it writes or changes external/local state. Prefer fixtures and isolated destinations.
+- Do not invent benchmark numbers, runtime status, or official-doc claims. Verify library versions from requirements/config/image before consulting matching official docs.

@@ -1,10 +1,12 @@
 # Luồng dữ liệu hiện có trong source
 
-Phạm vi file đã rà trong bản đồ này: generator, Spark/Flink, DAG, Feast và DWH entrypoints liên kết trực tiếp. Đây là liên kết tĩnh trong source, không phải kết quả chạy. Luồng sẽ được kiểm chứng lại theo từng milestone.
+## File này dùng để làm gì
 
-**Thiết kế đã chốt cho baseline đầu:** [WorkFlow.md](WorkFlow.md) dùng bốn feature 15m, không dùng feature 30d làm đầu vào model. Code hiện tại vẫn có 30d và cần thay/đối chiếu ở các milestone; đây là khác biệt implementation so với mục tiêu.
+Đây là bản đồ **hiện trạng source**: entrypoint, input/output và consumer tiếp theo như được nối trong code/config/DAG. Nó trả lời “repo hiện đang ghép các phần ra sao?”, không phải “ta muốn xây hệ thống thế nào?” (xem [WorkFlow.md](WorkFlow.md)) hay “ta đã học tới đâu?” (xem [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md)).
 
-Mục tiêu: mỗi đầu phút `t`, dự đoán purchase trong một giờ tới cho user có view/cart hợp lệ mới được xử lý trong phút trước. Một prediction/user tại `t`, với bốn feature event-time `[t − 15 phút, t)` đã được xử lý trước điểm chốt; không chờ watermark. Spark tính cùng feature offline theo từng mốc đủ điều kiện; Flink tính online. Training lịch sử CSV ban đầu giả định replay lý tưởng theo event time vì CSV không ghi arrival time. Source hiện tại chưa được xác nhận đạt mục tiêu này.
+Kết nối có trong source không đồng nghĩa job đã chạy đúng. Mỗi cạnh phải được hiểu là một trong hai trạng thái: static connection inspected, hoặc runtime verified với lệnh và kết quả. Phạm vi bản đồ hiện có cần được đọc lại theo component trước khi dùng làm bằng chứng.
+
+Thiết kế mục tiêu là bốn feature 15 phút; xem [WorkFlow.md](WorkFlow.md). Source hiện tại vẫn có feature 30 ngày. Bản đồ này chỉ mô tả kết nối hiện có theo code, không xác nhận runtime.
 
 ## Producer → nơi lưu → consumer hiện có trong source
 
@@ -23,16 +25,16 @@ flowchart LR
 
 | Producer | Output mặc định | Consumer |
 | --- | --- | --- |
-| [Batch generator](../src/generator/batch_generator.py) đọc 2019-Oct.csv | MinIO ecommerce-raw/batch/raw_events_old*.csv và raw_events_new*.csv; small còn lưu local | Spark DP1 |
-| [Stream generator](../src/generator/stream_generator.py) replay CSV | Kafka ecommerce_stream_events, JSON, key=user_id | Flink |
-| [Flink optimized](../src/flink/stream_optimized.py) nhánh raw | MinIO ecommerce-raw/staging/stream_events/ JSON | Spark DP1 |
+| [Batch generator](src/generator/batch_generator.py) đọc 2019-Oct.csv | MinIO ecommerce-raw/batch/raw_events_old*.csv và raw_events_new*.csv; small còn lưu local | Spark DP1 |
+| [Stream generator](src/generator/stream_generator.py) replay CSV | Kafka ecommerce_stream_events, JSON, key=user_id | Flink |
+| [Flink optimized](src/flink/stream_optimized.py) nhánh raw | MinIO ecommerce-raw/staging/stream_events/ JSON | Spark DP1 |
 | Flink nhánh dedup/window | Kafka ecommerce_stream_features_15m | Feast stream pusher |
-| [Spark DP1](../src/spark/spark_optimized.py) | Bronze Delta raw_events | DP2 |
+| [Spark DP1](src/spark/spark_optimized.py) | Bronze Delta raw_events | DP2 |
 | Spark DP2 | Silver stg_events, Gold dim_product/dim_user/fact_user_events Delta trên MinIO | DP3 đọc Silver; script DWH sync đọc Lakehouse |
 | Spark DP3 | feat_user_30d/user_labels Delta; Parquet export feast/user_batch_features_30d | Feast batch materialize và historical retrieval |
-| [DWH sync](../scripts/setup_dwh_schemas.py) | PostgreSQL bronze/silver/gold | SQL analytics |
-| [Feast materialize](../feature_store/materialize.py) | Redis batch features | Online retrieval |
-| [Stream pusher](../feature_store/stream_push_job.py) | Redis mặc định; offline/both là tùy chọn cần kiểm tra thực tế | Online/historical retrieval |
+| [DWH sync](scripts/setup_dwh_schemas.py) | PostgreSQL bronze/silver/gold | SQL analytics |
+| [Feast materialize](feature_store/materialize.py) | Redis batch features | Online retrieval |
+| [Stream pusher](feature_store/stream_push_job.py) | Redis mặc định; offline/both là tùy chọn cần kiểm tra thực tế | Online/historical retrieval |
 
 Airflow DAGs gọi Spark stages/validation và trigger downstream theo định nghĩa DAG. DataHub catalog/lineage được khai báo và gửi qua scripts riêng. Cả hai kết nối này mới là xác nhận từ source.
 

@@ -1,11 +1,16 @@
-# Tài liệu dự án
+# Tài liệu kỹ thuật và evidence
 
-Đọc theo thứ tự sau; mỗi file có một vai trò riêng.
+`docs/` dành cho ghi chú kỹ thuật theo technology/component và bằng chứng được tạo sau khi kiểm chứng. Tài liệu ở đây cần ghi version/phạm vi, code liên quan, lệnh/input, thời điểm, kết quả thật và giới hạn. Không chép roadmap hoặc thiết kế tổng thể vào đây.
 
-1. [README](../README.md) — giới thiệu dự án và điểm vào.
-2. [WorkFlow](WorkFlow.md) — bài toán đã chọn, hợp đồng dữ liệu mục tiêu và cách ánh xạ rubric.
-3. [DATA_FLOW](DATA_FLOW.md) — luồng đang có trong source, trạng thái xác minh từng cạnh và khoảng cách với mục tiêu.
-4. [LEARNING_ROADMAP](LEARNING_ROADMAP.md) — milestone hiện tại, thứ tự học và kết quả kiểm chứng đã thực sự chạy.
-5. [RUBRIC](../RUBRIC.md) — tiêu chí workbook và trạng thái đối chiếu.
+Hiện chưa có tài liệu component mới được xác nhận trong cấu trúc này. Khi hoàn tất milestone, thêm hoặc cập nhật ghi chú component phù hợp rồi liên kết tại đây. Chỉ tạo evidence cho lần chạy mới; unit test không phải bằng chứng pipeline runtime.
 
-README trong [API](../src/api/README.md) hiện chỉ là ghi chú phạm vi API; chưa coi đó là bằng chứng có service inference.
+| Area | Technical notes / evidence | Status |
+|---|---|---|
+| Generator | TBD — add after generator milestone | Not verified |
+| Kafka / Flink | TBD — add after stream milestone | Not verified |
+| Spark / Lakehouse / DWH | TBD — add after batch processing milestone | Not verified |
+| Airflow | TBD — add after DAG runtime milestone | Not verified |
+| Feast / Redis | TBD — add after feature-store milestone | Not verified |
+| Governance | TBD — add after DataHub verification | Not verified |
+
+Project-level design, current source map and learning progress live at repo root; see [INDEX.md](../INDEX.md).

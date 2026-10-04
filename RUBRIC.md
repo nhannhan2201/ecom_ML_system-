@@ -1,10 +1,21 @@
 # Theo dõi yêu cầu rubric
 
+## File này dùng để làm gì
+
+Đây là checklist các tiêu chí lấy từ workbook, không phải giáo án và không phải mô tả data flow. Mỗi dòng trả lời: rubric yêu cầu gì, code liên quan ở đâu, implementation đã được rà tới đâu, và có bằng chứng nào chứng minh tiêu chí đã chạy/đạt. Thứ tự học và tiến độ buổi học nằm trong [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md); thiết kế mục tiêu nằm trong [WorkFlow.md](WorkFlow.md); kết nối source nằm trong [DATA_FLOW.md](DATA_FLOW.md).
+
+### Cách đọc trạng thái
+
+- **Code:** `Chưa rà` = chưa xem phần implementation; `Có code, cần rà soát` = có ứng viên code nhưng chưa xác nhận đúng rubric; `Thiếu/chưa tìm thấy` = chưa tìm thấy implementation trong phạm vi đã rà.
+- **Kiểm chứng:** `Chưa kiểm chứng` = chưa có phép thử phù hợp; `Unit test` chỉ xác nhận logic nhỏ; `Runtime` cần lần chạy pipeline/service; `Scale/benchmark` cần phép đo đúng quy mô/config.
+- Chỉ ghi tiêu chí đã kiểm chứng khi có liên kết evidence, command, input/config, thời điểm, kết quả thật và giới hạn. Không quy điểm từ tên file, DAG trigger, unit test đơn lẻ hoặc kết quả cũ.
+- Một tiêu chí có thể có code mà vẫn chưa đúng/chưa chạy. Giữ riêng hai cột Code và Kiểm chứng.
+
 Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI K11 - MLE.xlsx, sheet de. Bỏ qua Novel Ideas. Các phần final/MLE sẽ xét sau luồng dữ liệu nền tảng.
 
 Có code không có nghĩa đã implement đúng hoặc đã chạy. Không dùng kết quả cũ để quy điểm. Mỗi milestone sẽ cập nhật phần đã kiểm chứng, lệnh và kết quả thật. Offline generator yêu cầu tối thiểu 100GB; chưa có bằng chứng chạy lại ở scale đó.
 
-Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt buộc cửa sổ 30 ngày. Điều này không bỏ các tiêu chí feature store: offline feature history, incremental materialize offline→online, stream push vào offline và online, temporal columns, training/label join vẫn phải thực hiện và kiểm chứng. Xem [WorkFlow](docs/WorkFlow.md); thiết kế này chưa được code/runtime xác nhận.
+Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt buộc cửa sổ 30 ngày. Điều này không bỏ các tiêu chí feature store: offline feature history, incremental materialize offline→online, stream push vào offline và online, temporal columns, training/label join vẫn phải thực hiện và kiểm chứng. Xem [WorkFlow](WorkFlow.md); thiết kế này chưa được code/runtime xác nhận. Tiến độ học nằm ở [LEARNING_ROADMAP.md](LEARNING_ROADMAP.md).
 
 | Dòng workbook | Nhóm | Yêu cầu | Điểm yêu cầu | Code | Kiểm chứng runtime/rubric | Nơi đối chiếu |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -44,7 +55,3 @@ Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt bu�
 | 36 | Documentation | Feature tables (feat_ tables) with event_timestamp and created | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `feature_store/features.py` |
 | 37 | Documentation | Relationship between dim & fact tables | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
 | 38 | Documentation | Naming convention (raw_, stg_, dim_, fact_, feat_) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | Toàn bộ repo |
-
-## Lượt hiện tại: dọn tài liệu và collectors
-
-Đã loại bỏ report/checklist/evidence cũ và script chỉ đo/profile/kiểm tra chúng; cập nhật tham chiếu. Giữ code xử lý và hạ tầng. Đợt dọn trước: make test: 32 passed; make lint: pass. Đây là unit/lint checks, không cộng điểm runtime. Milestone tiếp theo: generator batch chọn dữ liệu; xem [LEARNING_ROADMAP](docs/LEARNING_ROADMAP.md).
