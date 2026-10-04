@@ -1,16 +1,16 @@
 """Automated End-to-End Rehearsal Pipeline (Small Mode).
 
-Executes the full chain from clean infrastructure to Feast serving:
+Executes provisioning and processing commands for the existing small-mode pipeline:
 1. Check services health
 2. Initialize Airflow connections & DWH schemas
 3. Generate batch small dataset to MinIO
 4. Execute Spark Bronze -> Silver -> Gold transformation
-5. Trigger & verify Airflow DAGs (DP1 -> DP2 -> DP3 -> DP4)
+5. Trigger Airflow DAGs without waiting for their final runtime status
 6. Synchronize DataHub catalog and verify contracts
-7. Apply Feast and verify online serving
+7. Apply Feast and materialize batch features
 
 Logs detailed timing and PASS/FAIL status for each step to docs/evidence/rehearsal_log.txt.
-Stops immediately upon any failure.
+Stops on a nonzero command exit; this does not prove end-to-end data correctness.
 """
 
 import os
@@ -59,12 +59,6 @@ STEPS = [
     {
         "name": "Generate Small Batch Data",
         "cmd": [sys.executable, "src/generator/batch_generator.py", "--mode", "small"],
-        "cwd": PROJECT_ROOT,
-        "env": os.environ.copy(),
-    },
-    {
-        "name": "Profile Generated Data",
-        "cmd": [sys.executable, "scripts/profile_generated_data.py"],
         "cwd": PROJECT_ROOT,
         "env": os.environ.copy(),
     },
@@ -152,16 +146,11 @@ STEPS = [
         "cwd": PROJECT_ROOT,
         "env": os.environ.copy(),
     },
-    {
-        "name": "Feast Online Serving Benchmark",
-        "cmd": [sys.executable, "scripts/feast_serving_benchmark.py"],
-        "cwd": PROJECT_ROOT,
-        "env": os.environ.copy(),
-    },
 ]
 
 
 def run_rehearsal():
+    """Run the configured pipeline commands and record their exit status and timing."""
     os.makedirs(EVIDENCE_DIR, exist_ok=True)
     start_all = time.time()
     now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
@@ -171,7 +160,7 @@ def run_rehearsal():
         "END-TO-END PIPELINE REHEARSAL LOG (SMALL MODE)",
         "=" * 80,
         f"Execution Timestamp : {now_iso}",
-        "Target Mode         : small (10,200 source events)",
+        "Target Mode         : small (sample size from generator configuration)",
         f"Repository Root     : {PROJECT_ROOT}",
         "=" * 80,
         f"{'Step Name':<42} | {'Duration':<10} | {'Status'}",

@@ -19,7 +19,7 @@ PYTHON_EXEC ?= python3
 .PHONY: help install download-jars up-all down-all up-infra up-flink up-airflow up-datahub down \
         check reset all-small init-airflow gen-data gen-data-skewed gen-data-medium gen-data-full gen-stream \
         spark-baseline spark-opt spark-skew flink-baseline flink-opt dwh-setup \
-        governance-sync governance-verify feast-apply test lint docker-size profile-data profile-stream check-evidence
+        governance-sync governance-verify feast-apply test lint
 
 help: ## Show this help message and exit
 	@echo "========================================================================"
@@ -171,29 +171,8 @@ feast-apply: ## Apply Feast feature store repository configuration
 
 test: ## Run unit tests with pytest and coverage
 	@echo "--> Running unit tests with pytest..."
-	@mkdir -p docs/evidence
-	pytest --cov=src/generator --cov=governance --cov=feature_store --cov=src/spark --cov=src/flink tests/ | tee docs/evidence/coverage.txt
+	pytest --cov=src/generator --cov=governance --cov=feature_store --cov=src/spark --cov=src/flink tests/
 
 lint: ## Run code linter with ruff
 	@echo "--> Running ruff linter..."
 	ruff check .
-
-docker-size: ## Compare and display Docker image sizes for Airflow Spark image
-	@echo "--> Inspecting Docker image sizes and layer breakdown..."
-	$(PYTHON_EXEC) scripts/measure_docker_sizes.py
-
-profile-data: ## Profile generated data distributions, skew, duplicates, and schema
-	@echo "--> Profiling generated dataset..."
-	$(PYTHON_EXEC) scripts/profile_generated_data.py
-
-profile-stream: ## Profile streaming generator manifest, late arrival and duplicates
-	@echo "--> Profiling streaming dataset..."
-	$(PYTHON_EXEC) scripts/profile_stream_data.py
-
-measure-cardinality: ## Measure high-cardinality replica scaling and SCD2 versions
-	@echo "--> Measuring high-cardinality replica scaling..."
-	$(PYTHON_EXEC) scripts/measure_scale_cardinality.py
-
-check-evidence: ## Audit docs/EVIDENCE_TODO.md screenshot completion and broken links
-	@echo "--> Auditing documentation evidence and screenshot checklist..."
-	$(PYTHON_EXEC) scripts/check_evidence.py

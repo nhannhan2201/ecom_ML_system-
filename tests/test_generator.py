@@ -321,8 +321,9 @@ def test_batch_generator_drift_injection(batch_generator_instance, sample_chunk_
     np.testing.assert_allclose(trans_prices, orig_prices * 2.0, rtol=1e-2)
 
 
-def test_batch_generator_save_manifest_local(batch_generator_instance, tmp_path):
-    """Verify _save_manifest writes valid JSON manifest."""
+def test_batch_generator_save_manifest_local(batch_generator_instance, tmp_path, monkeypatch):
+    """Verify manifest JSON in a temporary working directory without touching real data."""
+    monkeypatch.chdir(tmp_path)
     manifest = {"status": "COMPLETED", "mode": "test", "total_records": 100, "execution_date": "2026-10-04"}
     batch_generator_instance._save_manifest(manifest)
     import json
@@ -333,8 +334,9 @@ def test_batch_generator_save_manifest_local(batch_generator_instance, tmp_path)
     assert loaded["total_records"] == 100
 
 
-def test_stream_generator_checkpoint_and_manifest(tmp_path):
-    """Verify StreamDataGenerator checkpoint save/load and manifest generation."""
+def test_stream_generator_checkpoint_and_manifest(tmp_path, monkeypatch):
+    """Verify checkpoint and manifest operations stay inside the temporary directory."""
+    monkeypatch.chdir(tmp_path)
     gen = StreamDataGenerator.__new__(StreamDataGenerator)
     gen.checkpoint_file = str(tmp_path / "stream_checkpoint.json")
     gen.topic_name = "test_topic"
