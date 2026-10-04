@@ -68,7 +68,8 @@ def test_online_serving(custom_user_ids: list = None):
     Args:
         custom_user_ids: Optional list of user IDs to query. If None, samples from MinIO Lakehouse.
     """
-    repo_path = os.path.dirname(os.path.abspath(__file__))
+    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    repo_path = os.path.join(project_root, "feature_store")
     store = FeatureStore(repo_path=repo_path)
 
     print("=" * 80)

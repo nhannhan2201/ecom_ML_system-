@@ -73,9 +73,7 @@ docker exec airflow_scheduler airflow dags trigger dp4_feast_materialize
 
 ### Bước 6: Kiểm tra Feature Serving trên Redis
 ```bash
-cd feature_store
-python test_serving.py
-cd ..
+python scripts/feast_serving_benchmark.py
 ```
 *Kết quả:* Vector đặc trưng được truy xuất từ Redis Online Store trong thời gian `< 5ms`.
 

@@ -193,7 +193,7 @@ Hệ thống triển khai tiến trình Streaming Pusher độc lập (tiến tr
 ### Minh chứng Bổ sung: Đo Lường Tốc Độ Online Serving
 - Chạy lệnh kiểm thử truy xuất đồng thời cả đặc trưng Batch 30d và Stream 15m từ RAM Redis:
   ```bash
-  python feature_store/test_serving.py --user-ids 520294503
+  python scripts/feast_serving_benchmark.py --user-ids 520294503
   ```
 - **Kết quả đo kiểm quan sát trên reference run:**
   - Thời gian truy xuất trung bình quan sát: **~1.62 ms** (Thiết kế đạt chuẩn < 2.0 ms, cần xác minh tại runtime).

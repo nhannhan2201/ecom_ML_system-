@@ -1,7 +1,7 @@
 # BÁO CÁO KỸ THUẬT: DATA GOVERNANCE VỚI DATAHUB (RUBRIC MỤC 6: DATA GOVERNANCE)
 
 **Dự án:** E-Commerce Real-Time Purchase Propensity Prediction System  
-**Tác giả:** Hoàng Minh Nhân & Antigravity AI  
+**Tác giả:** Hoàng Minh Nhân  
 **Hệ thống Quản trị:** Acryl DataHub  
 **Trạng thái Rubric:** IMPLEMENTED — READY FOR RUNTIME VERIFICATION  
 **Giao diện Web UI:** `http://localhost:9002` (Tài khoản: `datahub` / `datahub`)  

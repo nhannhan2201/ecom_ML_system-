@@ -1,6 +1,6 @@
 ================================================================================
 FEAST ONLINE FEATURE SERVING BENCHMARK REPORT
-Tested via: python3 feature_store/test_serving.py --user-ids 520294503
+Tested via: python3 scripts/feast_serving_benchmark.py --user-ids 520294503
 Online Store: Redis (localhost:6379)
 ================================================================================
 🔍 Danh sách 1 User ID kiểm thử:

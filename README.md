@@ -176,8 +176,7 @@ ecom_ML_system/
 │   ├── dp1_raw_to_bronze.py            # [DP1] Pipeline nạp Raw Batch CSV & Flink Staging vào Bronze Delta Lake
 │   ├── dp2_bronze_to_silver_and_gold.py# [DP2] Pipeline làm sạch, khử trùng lặp, xử lý Skew và dựng Gold DWH
 │   ├── dp3_compute_offline_features.py # [DP3] Pipeline tính toán 5 đặc trưng 30 ngày và nhãn nhị phân ML
-│   ├── dp4_feast_materialize.py        # [DP4] Pipeline kích hoạt Feast đồng bộ gia tăng từ Gold sang Redis
-│   └── quickstart_tutorial_dag.py      # Pipeline mẫu kiểm thử điều phối Airflow
+│   └── dp4_feast_materialize.py        # [DP4] Pipeline kích hoạt Feast đồng bộ gia tăng từ Gold sang Redis
 ├── docker/                             # Cấu hình triển khai hạ tầng phân tán bằng Docker Compose
 │   ├── Dockerfile.airflow              # Dockerfile multistage tối ưu dung lượng (-35.6%) chứa PySpark 3.5.0
 │   ├── Dockerfile.airflow.baseline     # Dockerfile naive baseline chưa tối ưu để đối chiếu dung lượng
@@ -199,29 +198,25 @@ ecom_ML_system/
 │   ├── features.py                     # Định nghĩa Entity user_id, FeatureViews (30d batch, 15m stream), FeatureService
 │   ├── historical_retrieval.py         # Kịch bản kiểm thử AS-OF Point-in-time Join huấn luyện ML
 │   ├── materialize.py                  # Script đồng bộ đặc trưng từ Lakehouse MinIO lên Redis Online Store
-│   ├── stream_push_job.py              # Tiến trình tiêu thụ đặc trưng từ Kafka và nạp vào Feast PushSource
-│   └── test_serving.py                 # Kịch bản kiểm thử truy xuất đặc trưng trực tuyến với độ trễ thấp (< 5ms)
+│   └── stream_push_job.py              # Tiến trình tiêu thụ đặc trưng từ Kafka và nạp vào Feast PushSource
 ├── governance/                         # Phân hệ quản trị dữ liệu tập trung (Metadata as Code)
 │   ├── catalog.py                      # Khai báo thuần túy 12 Datasets, Schemas, Lineage, Data Contracts, Assertions
 │   ├── sync_catalog.py                 # Script phát hành gói tin MCPs lên DataHub GMS qua REST API
 │   └── verify_contracts.py             # Script kiểm định chất lượng dữ liệu mẫu (50,000 dòng) và gửi AssertionRunEvent
-├── plugins/                            # Plugin mở rộng chức năng cho Apache Airflow
-│   └── declarative_governance_plugin.py# Plugin ghi nhận mô hình Declarative DataHub Governance
 ├── rubic/                              # Tiêu chí đánh giá chính thức của học phần
 │   └── EDAI K11 - DE.xlsx              # Bảng Rubric chính thức (Sheet: edai-1 (50%), 100 điểm)
 ├── scripts/                            # Các kịch bản phụ trợ vận hành và kiểm tra hệ thống
 │   ├── download_flink_jars.sh          # Kịch bản tải Flink Kafka connector và S3 Hadoop JARs
 │   ├── dwh_explain_analyze.py          # Kịch bản đo lường EXPLAIN (ANALYZE, BUFFERS) trên PostgreSQL DWH
-│   ├── profile_generated_data.py       # Kịch bản phân tích Skew, High Cardinality, Duplicate trên dữ liệu thật
+│   ├── feast_serving_benchmark.py      # Kịch bản đo lường độ trễ truy xuất đặc trưng trực tuyến Feast (< 5ms)
 │   ├── init_airflow_connections.py     # Khởi tạo Airflow Connections và Variables từ môi trường
 │   ├── inspect_lakehouse.py            # Truy vấn và kiểm tra bảng Lakehouse nhanh qua PyArrow
 │   ├── optimize_storage.py             # Kịch bản thực thi Compaction, Z-Ordering, Vacuum trên Delta Lake
-│   ├── notebook_builders/              # Kịch bản tạo các jupyter notebook thí nghiệm
-│   │   ├── create_exploration_notebook.py
-│   │   ├── create_interactive_notebook.py
-│   │   └── create_stream_notebook.py
+│   ├── profile_generated_data.py       # Kịch bản phân tích Skew, High Cardinality, Duplicate trên dữ liệu thật
 │   ├── setup_dwh_schemas.py            # Kịch bản khởi tạo bảng Star Schema và đánh chỉ mục trên PostgreSQL
-│   └── quickstart_minio.py             # Kịch bản khởi tạo bucket MinIO (`ecommerce-raw`, `ecommerce-lakehouse`)
+│   └── smoke/                          # Kịch bản kiểm tra nhanh dịch vụ (MinIO, Kafka)
+│       ├── check_kafka.py
+│       └── check_minio.py
 ├── src/                                # Mã nguồn động cơ xử lý cốt lõi của hệ thống
 │   ├── api/                            # API phục vụ suy luận mô hình (Reserved for final-coursework FastAPI)
 │   │   └── README.md
