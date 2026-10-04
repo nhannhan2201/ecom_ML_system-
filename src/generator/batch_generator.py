@@ -59,12 +59,22 @@ class BatchDataGenerator:
         config_path: str = "config/generator_config.yaml",
         mode: str = None,
         sample_size: int = None,
-        target_size_gb: float = None
+        target_size_gb: float = None,
+        skew_override: bool = False,
+        dry_run: bool = False
     ):
         self.config_path = config_path
         self.config = self._load_config()
         self.batch_cfg = self.config.get("batch_generator", {})
         self.minio_cfg = self.batch_cfg.get("minio", {})
+        self.dry_run = dry_run
+
+        # Cấu hình Skew & Drift opt-in
+        fault_inj = self.batch_cfg.get("fault_injection", {})
+        self.skew_cfg = dict(fault_inj.get("skew", {"enabled": False}))
+        if skew_override:
+            self.skew_cfg["enabled"] = True
+        self.drift_cfg = dict(fault_inj.get("drift", {"enabled": False}))
 
         # Xác định chế độ
         self.mode = mode or self.batch_cfg.get("mode", "small")
@@ -96,11 +106,12 @@ class BatchDataGenerator:
             self.sample_size = sample_size or self.batch_cfg.get("sample_size", 1000000)
             self.target_size_gb = target_size_gb
 
-        self.input_csv = self._resolve_input_csv()
-        self.s3_client = self._init_s3_client()
+        self.input_csv = self._resolve_input_csv() if not self.dry_run else self.batch_cfg.get("input_csv", "2019-Oct.csv")
+        self.s3_client = self._init_s3_client() if not self.dry_run else None
 
         logger.info(
-            f"Khởi tạo BatchGenerator: mode='{self.mode}', "
+            f"Khởi tạo BatchGenerator: mode='{self.mode}', dry_run={self.dry_run}, "
+            f"skew_enabled={self.skew_cfg.get('enabled', False)}, "
             f"sample_size={f'{self.sample_size:,}' if self.sample_size else 'N/A'}, "
             f"target_size_gb={self.target_size_gb or 'N/A'}, "
             f"chunk_size={self.chunk_size:,}, input_csv='{self.input_csv}'"
@@ -209,7 +220,26 @@ class BatchDataGenerator:
             cols_order = [c for c in CANONICAL_10_COLUMNS if c in df.columns]
             df = df[cols_order]
 
-        # 3. Tiêm Duplicate riêng biệt (~2%)
+        # 3. Skew Injection (Opt-in bổ sung)
+        if self.skew_cfg.get("enabled", False):
+            skew_col = self.skew_cfg.get("column", "user_id")
+            hot_keys = self.skew_cfg.get("top_k_keys", [999999999, 888888888, 777777777])
+            hot_ratio = float(self.skew_cfg.get("hot_ratio", 0.30))
+            if skew_col in df.columns and hot_keys and hot_ratio > 0:
+                n_skew = int(len(df) * hot_ratio)
+                if n_skew > 0:
+                    np.random.seed(42 + replica_idx)
+                    skew_indices = np.random.choice(df.index, size=n_skew, replace=False)
+                    df.loc[skew_indices, skew_col] = np.random.choice(hot_keys, size=n_skew)
+
+        # 4. Concept / Data Drift (Opt-in cho Final Coursework)
+        if self.drift_cfg.get("enabled", False) and is_part2:
+            drift_col = self.drift_cfg.get("column", "price")
+            drift_factor = float(self.drift_cfg.get("drift_factor", 1.5))
+            if drift_col in df.columns:
+                df[drift_col] = (df[drift_col] * drift_factor).round(2)
+
+        # 5. Tiêm Duplicate riêng biệt (~2%)
         n_dup = 0
         if duplicate_rate > 0:
             n_dup = int(len(df) * duplicate_rate)
@@ -226,6 +256,67 @@ class BatchDataGenerator:
         bio = io.BytesIO(data_bytes)
         self.s3_client.upload_fileobj(bio, bucket, object_name)
         return True
+
+    def _save_manifest(self, manifest_data: dict):
+        """Lưu generation manifest dưới dạng JSON local và upload lên MinIO."""
+        import json
+        os.makedirs("data", exist_ok=True)
+        local_path = "data/generation_manifest.json"
+        with open(local_path, "w", encoding="utf-8") as f:
+            json.dump(manifest_data, f, indent=2, ensure_ascii=False)
+        logger.info(f"Đã lưu generation manifest cục bộ tại: {local_path}")
+
+        if self.s3_client:
+            bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
+            manifest_obj = "batch/generation_manifest.json"
+            try:
+                self._upload_bytes_to_minio(json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8"), manifest_obj, bucket)
+                logger.info(f"Đã upload manifest lên s3://{bucket}/{manifest_obj}")
+            except Exception as e:
+                logger.warning(f"Không thể upload manifest lên MinIO: {e}")
+
+    def run_dry_run_estimation(self):
+        """
+        Ước tính số liệu cho chế độ 100GB full benchmark, kiểm tra dung lượng đĩa trống.
+        Rubric: Implement Data Generator >= 100GB Benchmark Scale.
+        """
+        import shutil
+        target_gb = self.target_size_gb or 100.0
+        target_bytes = int(target_gb * 1024 * 1024 * 1024)
+        avg_row_bytes = 131.5
+        estimated_rows = int(target_bytes / avg_row_bytes)
+        part_size_mb = self.part_size_mb or 500
+        estimated_parts = int((target_gb * 1024) / part_size_mb)
+
+        total_disk, used_disk, free_disk = shutil.disk_usage(".")
+        free_disk_gb = free_disk / (1024 ** 3)
+        required_disk_gb = target_gb * 1.3
+
+        print("\n" + "=" * 85)
+        print(f"📊 DRY-RUN ESTIMATION REPORT: BENCHMARK FULL MODE ({target_gb:.1f} GB)")
+        print("=" * 85)
+        print(f"1. QUY MÔ DỮ LIỆU ƯỚC TÍNH:")
+        print(f"   • Dung lượng mục tiêu:           {target_gb:.1f} GB ({target_bytes:,} bytes)")
+        print(f"   • Tổng số bản ghi ước tính:      ~{estimated_rows:,} dòng")
+        print(f"   • Stage 1 (raw_events_old, 9 cột): ~{estimated_rows // 2:,} dòng (~{target_gb / 2:.1f} GB)")
+        print(f"   • Stage 2 (raw_events_new, 10 cột): ~{estimated_rows // 2:,} dòng (~{target_gb / 2:.1f} GB)")
+        print(f"   • Kích thước mỗi part file:      {part_size_mb} MB")
+        print(f"   • Tổng số part files dự kiến:    ~{estimated_parts} files (~{estimated_parts // 2} parts/stage)")
+        print("-" * 85)
+        print(f"2. KIỂM TRA TÀI NGUYÊN ĐĨA CỤC BỘ (DISK SPACE CHECK):")
+        print(f"   • Dung lượng đĩa khả dụng:       {free_disk_gb:.2f} GB")
+        print(f"   • Dung lượng an toàn tối thiểu:  {required_disk_gb:.2f} GB (1.3x target)")
+        if free_disk_gb < required_disk_gb:
+            print(f"   ⚠️  CẢNH BÁO: Dung lượng đĩa trống ({free_disk_gb:.2f} GB) < 1.3x mục tiêu ({required_disk_gb:.2f} GB)!")
+            print(f"       Khuyến nghị: Chạy full 100GB trên Cloud/VM chuyên dụng có gắn volume >= 150GB.")
+        else:
+            print(f"   ✅ Đĩa trống hiện tại đủ điều kiện thực thi an toàn (> 1.3x target).")
+        print("-" * 85)
+        print(f"3. LỆNH CHẠY THỰC TẾ:")
+        print(f"   • Chạy kiểm chứng code path (1GB): python3 src/generator/batch_generator.py --mode full --target-size-gb 1")
+        print(f"   • Chạy toàn bộ 100GB (Cloud/VM):   python3 src/generator/batch_generator.py --mode full --target-size-gb 100")
+        print("=" * 85 + "\n")
+
 
     def run_sample_mode(self):
         """
@@ -332,6 +423,28 @@ class BatchDataGenerator:
         print(f"   • Tỷ lệ sự kiện 'view':             {view_pct:.2f}% (Class Imbalance tự nhiên)")
         print(f"   • Unique user_id trong mẫu:         {df_p1['user_id'].nunique() + df_p2['user_id'].nunique():,}")
         print("=" * 85 + "\n")
+
+        # Lưu Generation Manifest
+        manifest = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "mode": self.mode,
+            "sample_size": sample_size,
+            "total_rows": total_rows,
+            "total_bytes": int((p1_size_mb + p2_size_mb) * 1024 * 1024),
+            "total_size_mb": round(p1_size_mb + p2_size_mb, 2),
+            "duplicate_rate_target": dup_rate,
+            "duplicate_rows_injected": total_dups,
+            "duplicate_rate_actual": round(actual_dup_rate, 4),
+            "schema_evolution": {
+                "effective_date": effective_date,
+                "part1_columns": list(df_p1.columns),
+                "part2_columns": list(df_p2.columns),
+                "new_column": "discount_percent"
+            },
+            "skew_config": self.skew_cfg,
+            "drift_config": self.drift_cfg
+        }
+        self._save_manifest(manifest)
 
     def run_benchmark_full_mode(self):
         """
@@ -502,9 +615,34 @@ class BatchDataGenerator:
         print(f"   • Skew & High Cardinality: Bảo toàn 100% phân phối tự nhiên của REES46")
         print("=" * 90 + "\n")
 
+        # Lưu Generation Manifest
+        manifest = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "mode": "full",
+            "target_size_gb": target_gb,
+            "total_rows": total_rows,
+            "total_bytes": total_bytes,
+            "total_gb": round(total_gb, 4),
+            "part_files_count": p1_part_idx + p2_part_idx,
+            "duplicate_rate_target": dup_rate,
+            "duplicate_rows_injected": total_dups,
+            "duplicate_rate_actual": round(actual_dup_rate, 4),
+            "schema_evolution": {
+                "effective_date": effective_date,
+                "part1_columns": CANONICAL_9_COLUMNS,
+                "part2_columns": CANONICAL_10_COLUMNS,
+                "new_column": "discount_percent"
+            },
+            "skew_config": self.skew_cfg,
+            "drift_config": self.drift_cfg
+        }
+        self._save_manifest(manifest)
+
     def run(self):
         """Hàm điều phối thực thi theo chế độ đã cấu hình."""
-        if self.mode == "full":
+        if self.dry_run:
+            self.run_dry_run_estimation()
+        elif self.mode == "full":
             self.run_benchmark_full_mode()
         else:
             self.run_sample_mode()
@@ -516,12 +654,17 @@ if __name__ == "__main__":
     parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium)")
     parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB (for full mode)")
     parser.add_argument("--config", default="config/generator_config.yaml", help="Path to config YAML")
+    parser.add_argument("--skewed", action="store_true", help="Enable opt-in synthetic skew injection")
+    parser.add_argument("--dry-run", action="store_true", help="Estimate metrics and disk requirements without writing data")
     args = parser.parse_args()
 
     gen = BatchDataGenerator(
         config_path=args.config,
         mode=args.mode,
         sample_size=args.sample_size,
-        target_size_gb=args.target_size_gb
+        target_size_gb=args.target_size_gb,
+        skew_override=args.skewed,
+        dry_run=args.dry_run
     )
     gen.run()
+

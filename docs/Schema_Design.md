@@ -151,6 +151,10 @@ CREATE TABLE gold.feat_user_30d (
   1. `event_timestamp`: Thời điểm sự kiện cuối cùng được ghi nhận trong chu kỳ rolling 30 ngày của người dùng. Trường này giúp Feast thực hiện *ASOF Join* (Point-in-time Join) khi ghép nối đặc trưng với nhãn huấn luyện, ngăn chặn hoàn toàn rò rỉ dữ liệu tương lai (*Data Leakage*).
   2. `created`: Mốc thời gian bản ghi được tạo ra trong Data Warehouse, phục vụ theo dõi nguồn gốc dữ liệu (*Audit Trail* và *Data Freshness*).
 
+### 4.3. Bảng nhãn huấn luyện ML (`gold.user_labels`)
+- **Xác nhận cấu trúc theo Rubric**: Bảng `gold.user_labels` trong pipeline DP3 và DWH (`scripts/setup_dwh_schemas.py`) được xác nhận có đúng các cột: `id` (BIGSERIAL PK), `user_id` (BIGINT NOT NULL), `prediction_timestamp` (TIMESTAMP NOT NULL), `target_purchase_1h` (INT NOT NULL - cột nhãn nhị phân [0, 1]), và `date` (DATE NOT NULL).
+
+
 ---
 
 ## 5. TỐI ƯU HÓA LƯU TRỮ DATA WAREHOUSE BẰNG INDEXING (RUBRIC 2.0Đ)

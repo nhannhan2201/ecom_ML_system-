@@ -1,0 +1,228 @@
+{
+  "timestamp": "2026-10-04T02:28:46.182100Z",
+  "volume": {
+    "part1_rows": 5100,
+    "part1_bytes": 682716,
+    "part1_mb": 0.65,
+    "part2_rows": 5100,
+    "part2_bytes": 693096,
+    "part2_mb": 0.66,
+    "total_rows": 10200,
+    "total_bytes": 1375812,
+    "total_mb": 1.31
+  },
+  "schema_evolution": {
+    "part1_columns": [
+      "event_time",
+      "event_type",
+      "product_id",
+      "category_id",
+      "category_code",
+      "brand",
+      "price",
+      "user_id",
+      "user_session"
+    ],
+    "part1_column_count": 9,
+    "part2_columns": [
+      "event_time",
+      "event_type",
+      "product_id",
+      "category_id",
+      "category_code",
+      "brand",
+      "price",
+      "user_id",
+      "user_session",
+      "discount_percent"
+    ],
+    "part2_column_count": 10,
+    "new_columns_in_part2": [
+      "discount_percent"
+    ],
+    "part1_data_types": {
+      "event_time": "object",
+      "event_type": "object",
+      "product_id": "int64",
+      "category_id": "int64",
+      "category_code": "object",
+      "brand": "object",
+      "price": "float64",
+      "user_id": "int64",
+      "user_session": "object"
+    },
+    "part2_data_types": {
+      "event_time": "object",
+      "event_type": "object",
+      "product_id": "int64",
+      "category_id": "int64",
+      "category_code": "object",
+      "brand": "object",
+      "price": "float64",
+      "user_id": "int64",
+      "user_session": "object",
+      "discount_percent": "int64"
+    }
+  },
+  "duplicate_rate": {
+    "part1_full_duplicates": 103,
+    "part1_dup_rate_pct": 2.02,
+    "part2_full_duplicates": 100,
+    "part2_dup_rate_pct": 1.96,
+    "total_key_duplicates": 204,
+    "total_key_dup_rate_pct": 2.0
+  },
+  "cardinality": {
+    "event_time": {
+      "unique_count": 1966,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.192745,
+      "is_high_cardinality": true
+    },
+    "event_type": {
+      "unique_count": 3,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.000294,
+      "is_high_cardinality": false
+    },
+    "product_id": {
+      "unique_count": 4260,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.417647,
+      "is_high_cardinality": true
+    },
+    "category_id": {
+      "unique_count": 393,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.038529,
+      "is_high_cardinality": false
+    },
+    "category_code": {
+      "unique_count": 106,
+      "non_null_count": 6939,
+      "cardinality_ratio": 0.015276,
+      "is_high_cardinality": false
+    },
+    "brand": {
+      "unique_count": 682,
+      "non_null_count": 8903,
+      "cardinality_ratio": 0.076603,
+      "is_high_cardinality": false
+    },
+    "price": {
+      "unique_count": 2909,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.285196,
+      "is_high_cardinality": true
+    },
+    "user_id": {
+      "unique_count": 3376,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.33098,
+      "is_high_cardinality": true
+    },
+    "user_session": {
+      "unique_count": 3642,
+      "non_null_count": 10200,
+      "cardinality_ratio": 0.357059,
+      "is_high_cardinality": true
+    },
+    "discount_percent": {
+      "unique_count": 5,
+      "non_null_count": 5100,
+      "cardinality_ratio": 0.00098,
+      "is_high_cardinality": false
+    }
+  },
+  "skew": {
+    "event_type": {
+      "view": {
+        "count": 9863,
+        "pct": 96.7
+      },
+      "cart": {
+        "count": 188,
+        "pct": 1.84
+      },
+      "purchase": {
+        "count": 149,
+        "pct": 1.46
+      }
+    },
+    "top_categories": {
+      "nan": {
+        "count": 3261,
+        "pct": 31.97
+      },
+      "electronics.smartphone": {
+        "count": 3003,
+        "pct": 29.44
+      },
+      "electronics.audio.headphone": {
+        "count": 328,
+        "pct": 3.22
+      },
+      "electronics.clocks": {
+        "count": 327,
+        "pct": 3.21
+      },
+      "computers.notebook": {
+        "count": 306,
+        "pct": 3.0
+      }
+    },
+    "top_brands": {
+      "samsung": {
+        "count": 1392,
+        "pct": 13.65
+      },
+      "nan": {
+        "count": 1297,
+        "pct": 12.72
+      },
+      "apple": {
+        "count": 1064,
+        "pct": 10.43
+      },
+      "xiaomi": {
+        "count": 765,
+        "pct": 7.5
+      },
+      "huawei": {
+        "count": 282,
+        "pct": 2.76
+      }
+    },
+    "top_users": {
+      "513840435": {
+        "count": 26,
+        "pct": 0.25
+      },
+      "512742880": {
+        "count": 24,
+        "pct": 0.24
+      },
+      "529004807": {
+        "count": 24,
+        "pct": 0.24
+      },
+      "513494064": {
+        "count": 24,
+        "pct": 0.24
+      },
+      "551807786": {
+        "count": 23,
+        "pct": 0.23
+      }
+    }
+  },
+  "streaming_specs": {
+    "topic": "ecommerce_stream_events",
+    "burst_multiplier": 30,
+    "burst_duration_sec": 600,
+    "late_arrival_rate_pct": 5.0,
+    "late_delay_range_minutes": "5 - 10 phút",
+    "streaming_duplicate_rate_pct": 1.5,
+    "partition_key": "user_id"
+  }
+}

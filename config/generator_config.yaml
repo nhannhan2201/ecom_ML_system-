@@ -63,6 +63,20 @@ batch_generator:
       effective_date: "2019-10-16"  # Từ ngày 16/10 mới có cột này, trước đó mang giá trị NULL
       discount_values: [4, 5, 8, 10, 12]  # Tỷ lệ giảm giá ngẫu nhiên (%)
 
+    # Tùy chọn 3: Synthetic Skew Injection (Opt-in bổ sung ngoài skew tự nhiên)
+    skew:
+      enabled: false
+      column: "user_id"
+      top_k_keys: [999999999, 888888888, 777777777]
+      hot_ratio: 0.30  # 30% dòng nhận hot keys
+
+    # Tùy chọn 4: Concept/Data Drift (Opt-in cho giai đoạn Final Coursework)
+    drift:
+      enabled: false
+      column: "price"
+      drift_factor: 1.5  # Tăng giá 50% ở Part 2 mô phỏng flash-sale/lạm phát
+
+
   # Cấu hình lưu trữ sau khi sinh dữ liệu (Rubric: Store data into MinIO - 2đ)
   minio:
     endpoint_url: "http://localhost:9000"

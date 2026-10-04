@@ -34,25 +34,28 @@ Hệ thống Data Generator đóng vai trò là "trái tim" cung cấp dữ li�
 Hệ thống sử dụng bộ dữ liệu thương mại điện tử thực tế **REES46 eCommerce Events History** (tháng 10/2019):
 
 * **Quy mô dữ liệu (Data Volume):**
-  * *Chế độ Mẫu (Development & Testing Sample):* $1,020,000$ dòng (sau khi tiêm lỗi), dung lượng $\approx 131.5 \text{ MB}$.
+  * *Chế độ Mẫu (Development & Testing Sample):* $1,020,000$ dòng (sau khi tiêm lỗi), dung lượng $\approx 131.5 \text{ MB}$. (Dữ liệu kiểm thử nhanh hiện tại trên MinIO: $10,200$ dòng $\approx 1.31 \text{ MB}$, chi tiết tại `docs/evidence/data_profile.md`).
   * *Chế độ Toàn bộ (Full Production Dataset):* $42,448,764$ dòng, dung lượng $\approx 5.4 \text{ GB}$.
+  * *Chế độ Benchmark Full (100GB Scale):* Hỗ trợ scale deterministic replay lên $\ge 100 \text{ GB}$ ($\approx 816.5$ triệu dòng, chia nhỏ thành các part files 500MB).
 * **Định dạng dữ liệu (Data Format):** CSV (Comma-Separated Values), mã hóa `UTF-8`.
 * **Cơ chế lưu trữ (Storage Architecture):**
   * Dữ liệu được lưu trữ trên **MinIO Object Storage** (chuẩn tương thích AWS S3 API).
   * Bucket lưu trữ: `ecommerce-raw`.
   * Phân chia tập tin (Partitions):
-    * `batch/raw_events_old.csv`: Chứa dữ liệu giai đoạn 1 ($510,000$ dòng, 9 cột, thời gian 01/10 $\rightarrow$ 15/10/2019).
-    * `batch/raw_events_new.csv`: Chứa dữ liệu giai đoạn 2 ($510,000$ dòng, 10 cột, thời gian 16/10 $\rightarrow$ 25/10/2019).
+    * `batch/raw_events_old.csv`: Chứa dữ liệu giai đoạn 1 (9 cột, thời gian 01/10 $\rightarrow$ 15/10/2019).
+    * `batch/raw_events_new.csv`: Chứa dữ liệu giai đoạn 2 (10 cột, thời gian 16/10 $\rightarrow$ 25/10/2019).
+    * `batch/generation_manifest.json`: Lưu vết toàn bộ metadata, số dòng, bytes, tỉ lệ duplicate và cấu hình sinh dữ liệu.
 
 ---
 
 ## 3. TÀI LIỆU HÓA CẤU HÌNH GENERATOR (`config/generator_config.yaml`)
 
-Toàn bộ hoạt động sinh dữ liệu và tiêm lỗi được điều khiển hoàn toàn thông qua file cấu hình `config/generator_config.yaml`, tuân thủ nguyên tắc tách biệt giữa mã nguồn (code) và tham số cấu hình:
+Toàn bộ hoạt động sinh dữ liệu và tiêm lỗi được điều khiển hoàn toàn thông qua file cấu hình `config/generator_config.yaml`. Secret/credential được nạp động từ biến môi trường (`MINIO_ENDPOINT`, `MINIO_ACCESS_KEY`, `MINIO_SECRET_KEY`), không hardcode trong cấu hình:
 
 ```yaml
 batch_generator:
   input_csv: "2019-Oct.csv"
+  mode: "small"
   sample_size: 1000000  # Đặt null nếu muốn chạy full 42.4 triệu dòng
   date_range:
     start_date: "2019-10-01"
@@ -67,21 +70,31 @@ batch_generator:
       enabled: true
       new_column: "discount_percent"
       effective_date: "2019-10-16"
-      discount_values: [5, 10, 15, 20, 25]  # Tỷ lệ % khuyến mãi
+      discount_values: [4, 5, 8, 10, 12]  # Tỷ lệ % khuyến mãi
+    skew:
+      enabled: false  # Opt-in: Tiêm Skew nhân tạo (bổ sung ngoài Skew tự nhiên)
+      column: "user_id"
+      top_k_keys: [999999999, 888888888, 777777777]
+      hot_ratio: 0.30
+    drift:
+      enabled: false  # Opt-in: Concept Drift giá cho giai đoạn Final Coursework
+      column: "price"
+      drift_factor: 1.5
 
-  # Cấu hình MinIO Object Storage
+  # Cấu hình MinIO Object Storage (Endpoint & Bucket)
   minio:
     endpoint_url: "http://localhost:9000"
-    access_key: "minioadmin"
-    secret_key: "minioadmin"
     bucket_name: "ecommerce-raw"
     part1_object_name: "batch/raw_events_old.csv"
     part2_object_name: "batch/raw_events_new.csv"
 ```
 
+> **Ghi chú về Skew**: Báo cáo kỹ thuật mặc định tận dụng phân phối **Skew tự nhiên** cực lớn có sẵn trong dữ liệu REES46 (`event_type` view chiếm >96%, `smartphone` chiếm >29%). Chế độ **Synthetic Skew Injection** là tính năng bổ sung (opt-in) kích hoạt khi cần thử nghiệm kịch bản stress-test đặc thù bằng cờ `--skewed` hoặc target `make gen-data-skewed`.
+
 ---
 
 ## 4. MINH CHỨNG KẾT QUẢ & CHẤT LƯỢNG DỮ LIỆU ĐÃ GENERATE
+
 
 Dưới đây là các minh chứng xác thực trích xuất trực tiếp từ quá trình chạy thực tế của `src/generator/batch_generator.py` và notebook kiểm chứng `notebooks/02_batch_data_verification.ipynb`:
 
@@ -249,4 +262,38 @@ Dưới đây là bảng tổng hợp đối chiếu toàn bộ các tiêu chí 
 | — | **Kafka Architecture & Keying** | Bảo toàn thứ tự stream | Partition theo `key = user_id`, cân bằng trên 3 partitions | Chuẩn KT | **Đạt** |
 | — | **Schema Continuity** | Đồng nhất Lakehouse | Schema 10 cột có `discount_percent: [4, 5, 8, 10, 12]%` | Chuẩn KT | **Đạt** |
 | **TỔNG** | **TOÀN BỘ DATA GENERATOR** | **Phần 1: Data Generator (Rubric)** | **Triển khai đầy đủ Generator Offline & Streaming** | **ĐẠT** | **READY FOR VERIFICATION** |
+
+---
+
+## 7. HƯỚNG DẪN CHẠY FULL 100GB (CLOUD/VM)
+
+### 7.1. Trạng thái Đánh giá Rubric
+- **Trạng thái**: `PARTIAL` (Code path, cơ chế chia part files 500MB, streaming zero-OOM, time-shifted replay, dry-run safety checker, và manifest tracking đã hoàn thiện và kiểm chứng 100%; việc sinh trọn vẹn 100GB dữ liệu thật yêu cầu máy chủ có dung lượng lưu trữ $\ge 130\text{ GB}$).
+
+### 7.2. Lệnh Kiểm tra Dry-Run An toàn (Zero Risk)
+Để ước tính số lượng bản ghi, số part file, và kiểm tra dung lượng đĩa trống hiện tại của máy tính mà không sinh file ghi đĩa:
+```bash
+python3 src/generator/batch_generator.py --mode full --dry-run
+# Hoặc qua Makefile:
+make gen-data-full
+```
+Lệnh sẽ in báo cáo kiểm tra tài nguyên và đưa ra cảnh báo nếu dung lượng đĩa trống $< 1.3 \times \text{target}$.
+
+### 7.3. Kiểm Chứng Code Path (Test Run)
+Đã chạy kiểm chứng luồng ghi full-mode thành công trên môi trường cục bộ:
+```bash
+python3 src/generator/batch_generator.py --mode full --target-size-gb 0.01
+```
+*Kết quả ghi nhận*:
+- Hoàn thành trong **23.13 giây** với thông lượng **9.98 GB/giờ**.
+- Sinh thành công `raw_events_old_part-00000.csv` (32.48 MB) và `raw_events_new_part-00000.csv` (33.18 MB).
+- Xuất tệp manifest `data/generation_manifest.json` và đồng bộ lên MinIO `s3://ecommerce-raw/batch/generation_manifest.json`.
+
+### 7.4. Lệnh Chạy Toàn Bộ 100GB trên Cloud/VM Chuyên Dụng
+Khi chạy trên VM/Cloud có ổ đĩa trống tối thiểu 130GB:
+```bash
+python3 src/generator/batch_generator.py --mode full --target-size-gb 100
+```
+Dữ liệu sẽ được chia đều thành khoảng **204 part files** (mỗi part 500MB) tải trực tiếp lên MinIO bucket `ecommerce-raw/batch/`.
+
 
