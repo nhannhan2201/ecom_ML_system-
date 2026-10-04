@@ -1,0 +1,46 @@
+================================================================================
+POSTGRESQL DWH EXPLAIN (ANALYZE, BUFFERS) BENCHMARK REPORT
+Table: gold.fact_user_events (~1.4M rows)
+================================================================================
+
+--- QUERY BEING TESTED ---
+SELECT event_type, product_sk, price, event_time 
+        FROM gold.fact_user_events 
+        WHERE user_id = 513359812 AND event_time >= '2019-10-16 04:15:13'
+        ORDER BY event_time DESC;
+
+--- 1. BASELINE EXECUTION (INDEX SCAN DISABLED: FORCED SEQUENTIAL SCAN) ---
+Gather Merge  (cost=45622.08..45643.08 rows=180 width=52) (actual time=388.694..395.470 rows=355 loops=1)
+  Workers Planned: 2
+  Workers Launched: 2
+  Buffers: shared hit=72 read=35878
+  ->  Sort  (cost=44622.05..44622.28 rows=90 width=52) (actual time=381.721..381.751 rows=118 loops=3)
+        Sort Key: event_time DESC
+        Sort Method: quicksort  Memory: 37kB
+        Buffers: shared hit=72 read=35878
+        Worker 0:  Sort Method: quicksort  Memory: 32kB
+        Worker 1:  Sort Method: quicksort  Memory: 38kB
+        ->  Parallel Seq Scan on fact_user_events  (cost=0.00..44619.13 rows=90 width=52) (actual time=140.429..381.197 rows=118 loops=3)
+              Filter: ((event_time >= '2019-10-16 04:15:13'::timestamp without time zone) AND (user_id = 513359812))
+              Rows Removed by Filter: 466075
+              Buffers: shared read=35878
+Planning:
+  Buffers: shared hit=147 read=9
+Planning Time: 2.446 ms
+Execution Time: 395.701 ms
+
+--- 2. OPTIMIZED EXECUTION (COMPOSITE B-TREE INDEX ENABLED: idx_fact_user_events_user_time) ---
+Sort  (cost=835.70..836.24 rows=217 width=52) (actual time=2.372..2.416 rows=355 loops=1)
+  Sort Key: event_time DESC
+  Sort Method: quicksort  Memory: 58kB
+  Buffers: shared hit=3 read=27
+  ->  Bitmap Heap Scan on fact_user_events  (cost=6.65..827.28 rows=217 width=52) (actual time=1.319..2.006 rows=355 loops=1)
+        Recheck Cond: ((user_id = 513359812) AND (event_time >= '2019-10-16 04:15:13'::timestamp without time zone))
+        Heap Blocks: exact=22
+        Buffers: shared hit=3 read=27
+        ->  Bitmap Index Scan on idx_fact_user_events_user_time  (cost=0.00..6.60 rows=217 width=0) (actual time=1.269..1.270 rows=355 loops=1)
+              Index Cond: ((user_id = 513359812) AND (event_time >= '2019-10-16 04:15:13'::timestamp without time zone))
+              Buffers: shared hit=3 read=5
+Planning Time: 0.177 ms
+Execution Time: 2.659 ms
+================================================================================

@@ -135,11 +135,41 @@ flowchart TD
 
 ---
 
-## 📁 3. CẤU TRÚC THƯ MỤC DỰ ÁN (REPOSITORY STRUCTURE)
+## 🚀 3. HƯỚNG DẪN KHỞI ĐỘNG NHANH (QUICK START)
+
+Chỉ với 6 lệnh tự động hóa qua `Makefile` để khởi chạy và kiểm thử toàn bộ hệ sinh thái:
+
+```bash
+# 1. Khởi tạo biến môi trường từ mẫu chuẩn
+cp .env.example .env
+
+# 2. Khởi động cụm hạ tầng nền tảng (MinIO, Postgres, Redis, Kafka, Flink, Airflow)
+make up-infra up-flink up-airflow
+
+# 3. Nạp Airflow Connections và Variables tự động
+make init-airflow
+
+# 4. Sinh dữ liệu thô vào MinIO Lakehouse (chế độ batch small 1M)
+make gen-data
+
+# 5. Chạy Spark pipeline làm sạch, khử trùng & dựng Gold Star Schema DWH
+make spark-opt
+
+# 6. Chạy toàn bộ bộ kiểm thử tự động pytest
+make test
+```
+
+---
+
+## 📁 4. CẤU TRÚC THƯ MỤC DỰ ÁN (REPOSITORY STRUCTURE)
 
 ```text
 ecom_ML_system/
 ├── README.md                           # Tài liệu tổng quan kiến trúc, hướng dẫn và mục lục hệ thống
+├── Makefile                            # Tự động hóa toàn bộ thao tác vận hành, kiểm thử, benchmark
+├── .env.example                        # Mẫu biến môi trường cấu hình chuẩn (zero credential hardcoded)
+├── requirements.txt                    # Danh mục thư viện Python chạy local (Spark, Flink client, Feast)
+├── requirements-dev.txt                # Danh mục thư viện kiểm thử & linter (pytest, hypothesis, ruff)
 ├── config/                             # Cấu hình bộ sinh dữ liệu và tham số hệ thống
 │   └── generator_config.yaml           # Cấu hình batch generator, stream generator, skew và tiêm lỗi
 ├── dags/                               # Các Directed Acyclic Graphs điều phối trên Apache Airflow
@@ -149,12 +179,21 @@ ecom_ML_system/
 │   ├── dp4_feast_materialize.py        # [DP4] Pipeline kích hoạt Feast đồng bộ gia tăng từ Gold sang Redis
 │   └── quickstart_tutorial_dag.py      # Pipeline mẫu kiểm thử điều phối Airflow
 ├── docker/                             # Cấu hình triển khai hạ tầng phân tán bằng Docker Compose
-│   ├── Dockerfile.airflow              # Dockerfile ảnh ecom-airflow-spark:2.7.3 chứa PySpark 3.5.0
+│   ├── Dockerfile.airflow              # Dockerfile multistage tối ưu dung lượng (-35.6%) chứa PySpark 3.5.0
+│   ├── Dockerfile.airflow.baseline     # Dockerfile naive baseline chưa tối ưu để đối chiếu dung lượng
+│   ├── requirements-airflow.txt        # Danh mục pip cô lập phục vụ multistage build container
 │   ├── docker-compose-airflow.yml      # Cụm điều phối Airflow (Webserver, Scheduler, PostgreSQL)
 │   ├── docker-compose-datahub.yml      # Nền tảng quản trị DataHub (GMS, Frontend UI, OpenSearch, MySQL)
 │   ├── docker-compose-flink.yml        # Cụm động cơ Flink 1.17 (JobManager, TaskManager 4 slots)
 │   ├── docker-compose-kafka.yml        # Cụm truyền thông điệp Apache Kafka & Zookeeper & Kafka UI
-│   └── docker-compose-storage.yml      # Cụm lưu trữ MinIO S3 Lakehouse, PostgreSQL DWH, Redis Store
+│   ├── docker-compose-minio.yml        # Dịch vụ MinIO Object Storage
+│   ├── docker-compose-postgres.yml     # Dịch vụ PostgreSQL DWH
+│   └── docker-compose-redis.yml        # Dịch vụ Redis Online Store
+├── docs/                               # Bộ tài liệu kỹ thuật chuyên sâu và báo cáo thực nghiệm 13 hạng mục
+│   ├── INDEX.md                        # Bảng mục lục tra cứu toàn bộ tài liệu ↔ Hạng mục Rubric
+│   ├── Docker_Optimization.md          # Báo cáo kỹ thuật tối ưu multistage Dockerfile & đo dung lượng thật
+│   ├── EVIDENCE_TODO.md                # Checklist các ảnh chụp màn hình UI thực tế cần chụp
+│   └── evidence/                       # Thư mục lưu trữ dữ liệu bằng chứng đo lường thực nghiệm thô
 ├── feature_store/                      # Phân hệ Feast Feature Store (Offline / Online Store)
 │   ├── feature_store.yaml              # Cấu hình kho đặc trưng Feast (MinIO FileSource + Redis Online Store)
 │   ├── features.py                     # Định nghĩa Entity user_id, FeatureViews (30d batch, 15m stream), FeatureService
@@ -172,12 +211,15 @@ ecom_ML_system/
 │   └── EDAI K11 - DE.xlsx              # Bảng Rubric chính thức (Sheet: edai-1 (50%), 100 điểm)
 ├── scripts/                            # Các kịch bản phụ trợ vận hành và kiểm tra hệ thống
 │   ├── download_flink_jars.sh          # Kịch bản tải Flink Kafka connector và S3 Hadoop JARs
+│   ├── dwh_explain_analyze.py          # Kịch bản đo lường EXPLAIN (ANALYZE, BUFFERS) trên PostgreSQL DWH
+│   ├── profile_generated_data.py       # Kịch bản phân tích Skew, High Cardinality, Duplicate trên dữ liệu thật
 │   ├── init_airflow_connections.py     # Khởi tạo Airflow Connections và Variables từ môi trường
+│   ├── inspect_lakehouse.py            # Truy vấn và kiểm tra bảng Lakehouse nhanh qua PyArrow
+│   ├── optimize_storage.py             # Kịch bản thực thi Compaction, Z-Ordering, Vacuum trên Delta Lake
 │   ├── notebook_builders/              # Kịch bản tạo các jupyter notebook thí nghiệm
 │   │   ├── create_exploration_notebook.py
 │   │   ├── create_interactive_notebook.py
 │   │   └── create_stream_notebook.py
-│   ├── quickstart_flink_stream.py      # Kịch bản khởi động nhanh luồng Flink cơ bản
 │   ├── setup_dwh_schemas.py            # Kịch bản khởi tạo bảng Star Schema và đánh chỉ mục trên PostgreSQL
 │   └── setup_minio_buckets.py          # Kịch bản khởi tạo bucket MinIO (`ecommerce-raw`, `ecommerce-lakehouse`)
 ├── src/                                # Mã nguồn động cơ xử lý cốt lõi của hệ thống
@@ -188,13 +230,11 @@ ecom_ML_system/
 │   │   └── stream_optimized.py         # Phiên bản Flink tối ưu (Watermark 15m, Deduplication Top-1, Hopping Window)
 │   ├── generator/                      # Bộ sinh dữ liệu mô phỏng quy mô lớn chống tràn bộ nhớ
 │   │   ├── batch_generator.py          # Sinh dữ liệu lịch sử dạng chunked streaming (01/10 - 25/10) lên MinIO
-│   │   ├── stream_generator.py         # Phát luồng sự kiện (26/10 - 31/10) vào Kafka có tiêm lỗi chủ động
-│   │   └── base_generator.py           # Lớp trừu tượng định nghĩa schema và quy tắc sinh dữ liệu
+│   │   └── stream_generator.py         # Phát luồng sự kiện (26/10 - 31/10) vào Kafka có tiêm lỗi chủ động
 │   └── spark/                          # Động cơ xử lý dữ liệu lớn theo lô (Apache Spark & Delta Lake)
 │       ├── spark_baseline.py           # Phiên bản Spark chưa tối ưu (bộc lộ lỗi Data Skew, High Cardinality, OOM)
 │       └── spark_optimized.py          # Phiên bản Spark tối ưu (Broadcast Join, Salting, HyperLogLog, Delta Compaction)
-├── tests/                              # Bộ kiểm thử tự động (Unit test logic, DAG validation, contract tests)
-└── docs/                               # Bộ tài liệu kỹ thuật chuyên sâu và báo cáo thực nghiệm 13 hạng mục
+└── tests/                              # Bộ kiểm thử tự động (Unit test logic, DAG validation, contract tests)
 ```
 
 ---
@@ -261,6 +301,9 @@ Tất cả các báo cáo chuyên sâu và bằng chứng thực nghiệm đư�
 11. 📄 [Feature_Store_TTL_Report.md](docs/Feature_Store_TTL_Report.md): Phân tích tính khoa học của chính sách TTL (Batch 30d, Stream 2h), quy trình incremental materialization và đo độ trễ online serving.
 12. 📄 [Data_Governance_Report.md](docs/Data_Governance_Report.md): Báo cáo quản trị siêu dữ liệu, phả hệ End-to-End Lineage và hợp đồng kiểm định chất lượng dữ liệu.
 13. 📄 [Airflow_Orchestration_Report.md](docs/Airflow_Orchestration_Report.md): Báo cáo điều phối tự động 4 DAG (DP1, DP2, DP3, DP4) với cơ chế Ingest >> Validate >> Trigger.
+14. 📄 [Docker_Optimization.md](docs/Docker_Optimization.md): Báo cáo tối ưu Dockerfile multistage build, Headless JRE và đo lường giảm dung lượng thực tế (-35.6%).
+15. 📄 [EVIDENCE_TODO.md](docs/EVIDENCE_TODO.md): Checklist các ảnh chụp màn hình UI thực tế cần chụp phục vụ buổi bảo vệ đồ án.
+16. 📂 [docs/evidence/](docs/evidence/): Thư mục lưu trữ toàn bộ các tệp bằng chứng số liệu đo lường thô (Docker sizes, Data profiling, DWH Explain Analyze, Lakehouse files, Feast serving benchmark).
 
 *(Lưu ý: Các tài liệu học tập tham khảo ban đầu như LEARNING_GUIDE.md, FILE_TO_CONCEPT_MAP.md đã được dọn sang thư mục lưu trữ ngoài repo để tập trung toàn bộ vào tiêu chí rubric đánh giá).*
 

@@ -1,0 +1,51 @@
+================================================================================
+MINIO DATA LAKEHOUSE INSPECTION & FILE LISTING
+Timestamp: Sun Oct  4 02:31:39 AM UTC 2026
+================================================================================
+
+
+=====================================================================================
+ 📊 TỔNG HỢP TOÀN BỘ CÁC BẢNG TRONG MINIO DATA LAKEHOUSE
+=====================================================================================
+ Tên bảng (Zone / Name)           |   Số bản ghi |  Số cột | Phân vùng (Partition)
+-------------------------------------------------------------------------------------
+ bronze/raw_events                |    2,644,612 |      11 | Không phân vùng     
+ silver/stg_events                |    1,398,581 |      14 | date                
+ gold/dim_product                 |      256,401 |      10 | Không phân vùng (SCD2)
+ gold/dim_user                    |      239,356 |       8 | Không phân vùng     
+ gold/fact_user_events            |    1,398,581 |      12 | date (01, 16, 26)   
+ gold/feat_user_30d               |      173,941 |       9 | date (2019-10-26)   
+ gold/user_labels                 |      216,881 |       4 | date (2019-10-26)   
+ gold/category_summary            |          125 |       5 | Không phân vùng     
+ staging/stream_events (Flink)    |            0 |      10 | JSON (Append-only)
+-------------------------------------------------------------------------------------
+ 👉 Tổng số bản ghi quản lý trong Lakehouse: 6,328,478 records
+=====================================================================================
+
+
+--- DELTA LAKE PARQUET FILES BREAKDOWN (COMPACTION & PARTITION EVIDENCE) ---
+
+Prefix: gold/fact_user_events/
+  Total Active Data Parquet Files: 3
+  Total Active Size: 132,276,230 bytes (126.15 MB)
+    - gold/fact_user_events/date=2019-10-01/part-00000-4bde26a9-29cf-4b00-9413-afec77735e60.c000.snappy.parquet: 46,054,468 bytes (43.92 MB)
+    - gold/fact_user_events/date=2019-10-16/part-00000-9cc7dc8f-73f7-4199-995c-8235c632174c.c000.snappy.parquet: 48,044,744 bytes (45.82 MB)
+    - gold/fact_user_events/date=2019-10-26/part-00000-a109cbf2-e1e9-4160-8796-fd7d27bb5e20.c000.snappy.parquet: 38,177,018 bytes (36.41 MB)
+
+Prefix: silver/stg_events/
+  Total Active Data Parquet Files: 39
+  Total Active Size: 75,414,140 bytes (71.92 MB)
+    - silver/stg_events/date=2019-10-01/part-00000-233e3c49-c548-4af1-b55d-a621a679b19b.c000.snappy.parquet: 2,132,904 bytes (2.03 MB)
+    - silver/stg_events/date=2019-10-01/part-00001-645194aa-b7a0-4678-a715-db8c1aae02d4.c000.snappy.parquet: 2,125,287 bytes (2.03 MB)
+    - silver/stg_events/date=2019-10-01/part-00002-17b7dce5-b653-4779-b971-b7a651bd5e33.c000.snappy.parquet: 2,153,159 bytes (2.05 MB)
+    - silver/stg_events/date=2019-10-01/part-00003-1e4fd0d3-d99c-4649-98dd-fac5ec34bfe4.c000.snappy.parquet: 2,137,557 bytes (2.04 MB)
+    - silver/stg_events/date=2019-10-01/part-00004-d535cb1d-afd9-4291-b1cc-a4b5791a3e6c.c000.snappy.parquet: 2,130,184 bytes (2.03 MB)
+
+Prefix: bronze/raw_events/
+  Total Active Data Parquet Files: 60
+  Total Active Size: 94,190,712 bytes (89.83 MB)
+    - bronze/raw_events/part-00000-0e4d9b07-e398-4c1f-98c1-198e5b016d68-c000.snappy.parquet: 954,762 bytes (0.91 MB)
+    - bronze/raw_events/part-00000-63bab481-2b1e-4d01-b4b1-49e5cf537a6c-c000.snappy.parquet: 2,423,443 bytes (2.31 MB)
+    - bronze/raw_events/part-00000-84716608-0d30-4e75-a5f8-c435a86c64b2-c000.snappy.parquet: 954,762 bytes (0.91 MB)
+    - bronze/raw_events/part-00000-d4479630-3572-428a-a341-bf12d02895f9-c000.snappy.parquet: 2,429,286 bytes (2.32 MB)
+    - bronze/raw_events/part-00000-f66e1c15-2eec-4226-89f6-ffb0133a0e24-c000.snappy.parquet: 1,827,920 bytes (1.74 MB)
