@@ -35,7 +35,7 @@ except ImportError:
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [StreamDataGenerator] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("StreamDataGenerator")
 
@@ -50,9 +50,7 @@ class StreamDataGenerator:
     """
 
     def __init__(
-        self,
-        config_path: str = "config/generator_config.yaml",
-        checkpoint_file: str = ".stream_checkpoint.json"
+        self, config_path: str = "config/generator_config.yaml", checkpoint_file: str = ".stream_checkpoint.json"
     ):
         self.config_path = config_path
         self.checkpoint_file = checkpoint_file
@@ -90,7 +88,7 @@ class StreamDataGenerator:
             "burst_events": 0,
             "last_event_time": None,
             "start_time": time.time(),
-            "byte_offset": 0
+            "byte_offset": 0,
         }
 
         signal.signal(signal.SIGINT, self._handle_graceful_shutdown)
@@ -117,7 +115,7 @@ class StreamDataGenerator:
             "acks": 1,
             "linger.ms": 10,
             "batch.num.messages": 1000,
-            "queue.buffering.max.messages": 100000
+            "queue.buffering.max.messages": 100000,
         }
         logger.info(f"Connecting to Kafka Broker at: {self.bootstrap_servers}")
         return Producer(producer_conf)
@@ -172,11 +170,7 @@ class StreamDataGenerator:
     def _save_checkpoint(self, byte_offset: int):
         """Persist current state into checkpoint file."""
         self.stats["byte_offset"] = byte_offset
-        data = {
-            "byte_offset": byte_offset,
-            "timestamp": datetime.now().isoformat(),
-            "stats": self.stats
-        }
+        data = {"byte_offset": byte_offset, "timestamp": datetime.now().isoformat(), "stats": self.stats}
         with open(self.checkpoint_file, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2)
 
@@ -201,7 +195,7 @@ class StreamDataGenerator:
                 "brand": parts[5] if parts[5] else None,
                 "price": float(parts[6]) if parts[6] else 0.0,
                 "user_id": int(parts[7]) if parts[7] else None,
-                "user_session": parts[8] if parts[8] else None
+                "user_session": parts[8] if parts[8] else None,
             }
             if self.include_discount:
                 event["discount_percent"] = int(random.choice(self.discount_vals))
@@ -214,12 +208,7 @@ class StreamDataGenerator:
         payload = json.dumps(event).encode("utf-8")
         key = str(event["user_id"]).encode("utf-8") if event["user_id"] is not None else None
 
-        self.producer.produce(
-            topic=self.topic_name,
-            key=key,
-            value=payload,
-            callback=self._delivery_report
-        )
+        self.producer.produce(topic=self.topic_name, key=key, value=payload, callback=self._delivery_report)
         self.producer.poll(0)
         self.stats["total_produced"] += 1
         if not is_duplicate and not is_late:
@@ -248,13 +237,10 @@ class StreamDataGenerator:
             "late_released": self.stats["late_released"],
             "delay_distribution_minutes": self.late_buffer.get_delay_distribution(),
             "burst_events": self.stats["burst_events"],
-            "burst_config": {
-                "multiplier": burst_multiplier,
-                "duration_seconds": burst_duration
-            },
+            "burst_config": {"multiplier": burst_multiplier, "duration_seconds": burst_duration},
             "last_event_time": self.stats.get("last_event_time"),
             "elapsed_seconds": round(elapsed, 2),
-            "average_throughput_msg_per_sec": round(avg_throughput, 2)
+            "average_throughput_msg_per_sec": round(avg_throughput, 2),
         }
         manifest_path = "data/stream_manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:
@@ -262,11 +248,7 @@ class StreamDataGenerator:
         logger.info(f"Saved stream manifest at: {manifest_path}")
 
     def start_streaming(
-        self,
-        max_events: int = 0,
-        base_rate: int = 100,
-        burst_duration: int = None,
-        burst_multiplier: int = None
+        self, max_events: int = 0, base_rate: int = 100, burst_duration: int = None, burst_multiplier: int = None
     ):
         """
         Main streaming loop with burst and late arrival simulation.
@@ -299,7 +281,9 @@ class StreamDataGenerator:
         logger.info(f"- Burst Traffic:           x{actual_burst_multiplier} for {actual_burst_duration}s")
         min_d = self.late_cfg.get("delay_minutes_min", 5)
         max_d = self.late_cfg.get("delay_minutes_max", 10)
-        logger.info(f"- Late Arrival Rate:       {self.late_cfg.get('rate', 0.05) * 100:.1f}% ({min_d}-{max_d} min delay)")
+        logger.info(
+            f"- Late Arrival Rate:       {self.late_cfg.get('rate', 0.05) * 100:.1f}% ({min_d}-{max_d} min delay)"
+        )
         logger.info(f"- Duplicate Rate:          {self.dup_cfg.get('rate', 0.015) * 100:.1f}%")
         logger.info(f"- Schema:                  10 columns (with discount_percent: {self.discount_vals}%)")
         logger.info(f"- Event Limit:             {'Unlimited' if max_events <= 0 else max_events}")
@@ -329,7 +313,9 @@ class StreamDataGenerator:
                 if not burst_mode and (now_sec - last_burst_check >= burst_interval or events_produced_session == 1000):
                     burst_mode = True
                     burst_start_time = now_sec
-                    logger.info(f"[BURST START] Flash Sale active: x{actual_burst_multiplier} throughput ({base_rate * actual_burst_multiplier} msg/s)")
+                    logger.info(
+                        f"[BURST START] Flash Sale active: x{actual_burst_multiplier} throughput ({base_rate * actual_burst_multiplier} msg/s)"
+                    )
 
                 if burst_mode and (now_sec - burst_start_time >= actual_burst_duration):
                     burst_mode = False
@@ -438,9 +424,15 @@ class StreamDataGenerator:
         print(f"- Total events sent to Kafka:      {self.stats['total_produced']:,} messages")
         print(f"- Normal events:                   {self.stats['normal_produced']:,}")
         print(f"- Burst Traffic events:            {self.stats['burst_events']:,} messages")
-        print(f"- Late Arrival events generated:   {self.stats['late_delayed']:,} (Released: {self.stats['late_released']:,})")
-        print(f"- Late Delay Distribution:         Min={delay_stats['min']}m, Median={delay_stats['median']}m, Max={delay_stats['max']}m")
-        print(f"- Injected duplicates:             {self.stats['duplicates_injected']:,} ({self.stats['duplicates_injected'] / max(1, self.stats['total_produced']) * 100:.2f}%)")
+        print(
+            f"- Late Arrival events generated:   {self.stats['late_delayed']:,} (Released: {self.stats['late_released']:,})"
+        )
+        print(
+            f"- Late Delay Distribution:         Min={delay_stats['min']}m, Median={delay_stats['median']}m, Max={delay_stats['max']}m"
+        )
+        print(
+            f"- Injected duplicates:             {self.stats['duplicates_injected']:,} ({self.stats['duplicates_injected'] / max(1, self.stats['total_produced']) * 100:.2f}%)"
+        )
         print(f"- Final Event Time:                {self.stats.get('last_event_time', 'N/A')}")
         print(f"- Session elapsed time:            {elapsed:.1f} seconds")
         print(f"- Average throughput:              {avg_throughput:.1f} messages/sec")
@@ -469,7 +461,7 @@ def main():
         max_events=args.max_events,
         base_rate=args.rate,
         burst_duration=args.burst_duration,
-        burst_multiplier=args.burst_multiplier
+        burst_multiplier=args.burst_multiplier,
     )
 
 

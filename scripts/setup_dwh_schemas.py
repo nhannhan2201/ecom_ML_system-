@@ -37,9 +37,9 @@ PG_HOST = os.getenv("POSTGRES_DWH_HOST", "localhost")
 PG_PORT = int(os.getenv("POSTGRES_DWH_PORT", "5432"))
 PG_USER = os.getenv("POSTGRES_DWH_USER", "postgres")
 PG_PASS = os.getenv("POSTGRES_DWH_PASSWORD", "postgres")
-PG_DB   = os.getenv("POSTGRES_DWH_DB", "ecom_dwh")
+PG_DB = os.getenv("POSTGRES_DWH_DB", "ecom_dwh")
 
-MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
 MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
 if not MINIO_ACCESS_KEY:
@@ -47,29 +47,23 @@ if not MINIO_ACCESS_KEY:
 if not MINIO_SECRET_KEY:
     raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
+
 def get_connection():
-    return psycopg2.connect(
-        host=PG_HOST,
-        port=PG_PORT,
-        user=PG_USER,
-        password=PG_PASS,
-        dbname=PG_DB
-    )
+    return psycopg2.connect(host=PG_HOST, port=PG_PORT, user=PG_USER, password=PG_PASS, dbname=PG_DB)
+
 
 def get_s3_filesystem():
     return S3FileSystem(
-        access_key=MINIO_ACCESS_KEY,
-        secret_key=MINIO_SECRET_KEY,
-        endpoint_override=MINIO_ENDPOINT,
-        scheme="http"
+        access_key=MINIO_ACCESS_KEY, secret_key=MINIO_SECRET_KEY, endpoint_override=MINIO_ENDPOINT, scheme="http"
     )
+
 
 # ==============================================================================
 # BƯỚC 1: KHỞI TẠO 3 SCHEMAS VÀ TOÀN BỘ CẤU TRÚC BẢNG DWH
 # ==============================================================================
 def create_schemas_and_tables(conn):
     print("=" * 80)
-    print(" 🛠️  [BƯỚC 1]: KHỞI TẠO 3 SCHEMAS (BRONZE, SILVER, GOLD) VÀ CÁC BẢNG DATA WAREHOUSE")
+    print(" [BUOC 1]: KHOI TAO 3 SCHEMAS (BRONZE, SILVER, GOLD) VA CAC BANG DATA WAREHOUSE")
     print("=" * 80)
     with conn.cursor() as cur:
         # 1. Tạo 3 Schemas
@@ -245,9 +239,10 @@ def load_table_from_minio(conn, s3, lakehouse_path, target_table, columns, pk_co
         conn.commit()
     return total
 
+
 def sync_data_from_lakehouse(conn):
     print("\n" + "=" * 80)
-    print(" 📥 [BƯỚC 2]: ĐỒNG BỘ DỮ LIỆU TỪ MINIO DATA LAKEHOUSE VÀO CÁC TẦNG POSTGRESQL")
+    print(" [BUOC 2]: DONG BO DU LIEU TU MINIO DATA LAKEHOUSE VAO CAC TANG POSTGRESQL")
     print("=" * 80)
     s3 = get_s3_filesystem()
 
@@ -257,47 +252,125 @@ def sync_data_from_lakehouse(conn):
 
     # 1. Nạp Bronze Toàn bộ (1,832,306 dòng thô ban đầu)
     print(" -> [1/7] Đang đồng bộ bronze.raw_events (Toàn bộ dữ liệu thô)...")
-    b_cols = ["event_time", "event_type", "product_id", "category_id", "category_code",
-              "brand", "price", "user_id", "user_session", "discount_percent"]
-    n_bronze = load_table_from_minio(conn, s3, "ecommerce-lakehouse/bronze/raw_events", "bronze.raw_events", b_cols, limit=None)
+    b_cols = [
+        "event_time",
+        "event_type",
+        "product_id",
+        "category_id",
+        "category_code",
+        "brand",
+        "price",
+        "user_id",
+        "user_session",
+        "discount_percent",
+    ]
+    n_bronze = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/bronze/raw_events", "bronze.raw_events", b_cols, limit=None
+    )
     print(f"     -> Đã nạp {n_bronze:,} bản ghi vào bronze.raw_events.")
 
     # 2. Nạp Silver Toàn bộ (1,398,581 dòng sạch)
     print(" -> [2/7] Đang đồng bộ silver.stg_events (Toàn bộ dữ liệu sạch)...")
-    s_cols = ["event_timestamp", "date", "event_time", "event_type", "product_id",
-              "category_id", "category_code", "category_level1", "brand", "price",
-              "user_id", "user_session", "discount_percent"]
-    n_silver = load_table_from_minio(conn, s3, "ecommerce-lakehouse/silver/stg_events", "silver.stg_events", s_cols, limit=None)
+    s_cols = [
+        "event_timestamp",
+        "date",
+        "event_time",
+        "event_type",
+        "product_id",
+        "category_id",
+        "category_code",
+        "category_level1",
+        "brand",
+        "price",
+        "user_id",
+        "user_session",
+        "discount_percent",
+    ]
+    n_silver = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/silver/stg_events", "silver.stg_events", s_cols, limit=None
+    )
     print(f"     -> Đã nạp {n_silver:,} bản ghi vào silver.stg_events.")
 
     # 3. Nạp Gold dim_product Toàn bộ (256,401 dòng SCD2)
     print(" -> [3/7] Đang đồng bộ gold.dim_product (Toàn bộ 256k dòng SCD Type 2)...")
-    dp_cols = ["product_sk", "product_id", "category_id", "category_level1", "brand", "price", "discount_percent", "valid_from_ts", "valid_to_ts", "is_current"]
-    n_dim_p = load_table_from_minio(conn, s3, "ecommerce-lakehouse/gold/dim_product", "gold.dim_product", dp_cols, pk_col="product_sk", limit=None)
+    dp_cols = [
+        "product_sk",
+        "product_id",
+        "category_id",
+        "category_level1",
+        "brand",
+        "price",
+        "discount_percent",
+        "valid_from_ts",
+        "valid_to_ts",
+        "is_current",
+    ]
+    n_dim_p = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/gold/dim_product", "gold.dim_product", dp_cols, pk_col="product_sk", limit=None
+    )
     print(f"     -> Đã nạp {n_dim_p:,} bản ghi vào gold.dim_product.")
 
     # 4. Nạp Gold dim_user Toàn bộ (239,356 dòng)
     print(" -> [4/7] Đang đồng bộ gold.dim_user (Toàn bộ 239k khách hàng)...")
-    du_cols = ["user_id", "first_seen", "last_seen", "total_lifetime_events", "is_active", "valid_from_ts", "valid_to_ts", "is_current"]
-    n_dim_u = load_table_from_minio(conn, s3, "ecommerce-lakehouse/gold/dim_user", "gold.dim_user", du_cols, pk_col="user_id", limit=None)
+    du_cols = [
+        "user_id",
+        "first_seen",
+        "last_seen",
+        "total_lifetime_events",
+        "is_active",
+        "valid_from_ts",
+        "valid_to_ts",
+        "is_current",
+    ]
+    n_dim_u = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/gold/dim_user", "gold.dim_user", du_cols, pk_col="user_id", limit=None
+    )
     print(f"     -> Đã nạp {n_dim_u:,} bản ghi vào gold.dim_user.")
 
     # 5. Nạp Gold fact_user_events Toàn bộ (1,398,581 dòng Pure Fact)
     print(" -> [5/7] Đang đồng bộ gold.fact_user_events (Toàn bộ 1.39M sự kiện Pure Fact)...")
-    f_cols = ["event_id", "event_time", "date", "user_id", "product_sk", "category_level1", "brand", "price", "discount_percent", "event_type", "user_session"]
-    n_fact = load_table_from_minio(conn, s3, "ecommerce-lakehouse/gold/fact_user_events", "gold.fact_user_events", f_cols, pk_col=None, limit=None)
+    f_cols = [
+        "event_id",
+        "event_time",
+        "date",
+        "user_id",
+        "product_sk",
+        "category_level1",
+        "brand",
+        "price",
+        "discount_percent",
+        "event_type",
+        "user_session",
+    ]
+    n_fact = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/gold/fact_user_events", "gold.fact_user_events", f_cols, pk_col=None, limit=None
+    )
     print(f"     -> Đã nạp {n_fact:,} bản ghi vào gold.fact_user_events.")
 
     # 6. Nạp Gold feat_user_30d Toàn bộ (173,941 dòng Feast Feature Store)
     print(" -> [6/7] Đang đồng bộ gold.feat_user_30d (Toàn bộ Feature Store)...")
-    feat_cols = ["user_id", "f_views_30d", "f_carts_30d", "f_purchases_30d", "f_spend_30d", "f_distinct_categories_30d", "event_timestamp", "created", "date"]
-    n_feat = load_table_from_minio(conn, s3, "ecommerce-lakehouse/gold/feat_user_30d", "gold.feat_user_30d", feat_cols, limit=None)
+    feat_cols = [
+        "user_id",
+        "f_views_30d",
+        "f_carts_30d",
+        "f_purchases_30d",
+        "f_spend_30d",
+        "f_distinct_categories_30d",
+        "event_timestamp",
+        "created",
+        "date",
+    ]
+    n_feat = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/gold/feat_user_30d", "gold.feat_user_30d", feat_cols, limit=None
+    )
     print(f"     -> Đã nạp {n_feat:,} bản ghi vào gold.feat_user_30d.")
 
     # 7. Nạp Gold user_labels Toàn bộ (216,881 dòng nhãn ML)
     print(" -> [7/7] Đang đồng bộ gold.user_labels (Toàn bộ nhãn ML)...")
     lbl_cols = ["user_id", "prediction_timestamp", "target_purchase_1h", "date"]
-    n_lbl = load_table_from_minio(conn, s3, "ecommerce-lakehouse/gold/user_labels", "gold.user_labels", lbl_cols, limit=None)
+    n_lbl = load_table_from_minio(
+        conn, s3, "ecommerce-lakehouse/gold/user_labels", "gold.user_labels", lbl_cols, limit=None
+    )
     print(f"     -> Đã nạp {n_lbl:,} bản ghi vào gold.user_labels.")
 
     # 8. Tạo Foreign Key Constraints để DBeaver tự động hiển thị sơ đồ Star Schema ERD và đảm bảo Toàn vẹn dữ liệu
@@ -319,7 +392,7 @@ def sync_data_from_lakehouse(conn):
     print(" -> Khai báo quan hệ Khóa ngoại Dim - Fact và cập nhật Statistics Catalog thành công.")
 
     print("\n" + "-" * 60)
-    print(" 📋 [XÁC MINH SỐ LƯỢNG BẢN GHI ĐỒNG BỘ TRÊN POSTGRESQL]:")
+    print(" [XAC MINH SO LUONG BAN GHI DONG BO TREN POSTGRESQL]:")
     print("-" * 60)
     tables_to_check = [
         ("bronze.raw_events", "Raw Ingest Stream"),
@@ -328,13 +401,13 @@ def sync_data_from_lakehouse(conn):
         ("gold.dim_user", "User Dimension"),
         ("gold.fact_user_events", "Pure Fact Table"),
         ("gold.feat_user_30d", "Feast Feature Store"),
-        ("gold.user_labels", "ML Training Labels")
+        ("gold.user_labels", "ML Training Labels"),
     ]
     with conn.cursor() as cur:
         for tbl, desc in tables_to_check:
             cur.execute(f"SELECT COUNT(*) FROM {tbl};")
             cnt = cur.fetchone()[0]
-            print(f"  • {tbl:<23} ({desc:<25}): {cnt:>10,} dòng")
+            print(f"  * {tbl:<23} ({desc:<25}): {cnt:>10,} dòng")
     print("-" * 60)
 
 
@@ -370,12 +443,13 @@ def run_explain_analyze(conn, user_id, min_time, label):
         "exec_time_ms": float(exec_time_match.group(1)) if exec_time_match else 0.0,
         "cost_total": float(cost_match.group(2)) if cost_match else 0.0,
         "buffers": buffers_match.group(1).strip() if buffers_match else "N/A",
-        "raw_plan": plan_text
+        "raw_plan": plan_text,
     }
+
 
 def benchmark_dwh_indexing(conn):
     print("\n" + "=" * 80)
-    print(" ⚡ [BƯỚC 3]: THỰC THI BENCHMARK DATA WAREHOUSE INDEXING")
+    print(" [BUOC 3]: THUC THI BENCHMARK DATA WAREHOUSE INDEXING")
     print("=" * 80)
 
     # Chọn 1 user_id có nhiều sự kiện thực tế để test
@@ -391,7 +465,7 @@ def benchmark_dwh_indexing(conn):
         row = cur.fetchone()
         test_user = row[0]
         event_cnt = row[1]
-        min_time  = row[2]
+        min_time = row[2]
 
     print(f" -> Kiểm thử với: user_id = {test_user} ({event_cnt} events, event_time >= '{min_time}')")
 
@@ -426,14 +500,24 @@ def benchmark_dwh_indexing(conn):
     cost_red = (1 - (metrics_after["cost_total"] / max(metrics_before["cost_total"], 1))) * 100
 
     print("\n" + "=" * 80)
-    print(" 📊 BẢNG TỔNG HỢP HIỆU QUẢ DATA WAREHOUSE INDEXING")
+    print(" BANG TONG HOP HIEU QUA DATA WAREHOUSE INDEXING")
     print("=" * 80)
-    print(f"{'Tiêu chí so sánh':<32} | {'Trước Optimize (Baseline)':<30} | {'Sau Optimize (Composite Index)':<30} | {'Mức độ cải thiện'}")
+    print(
+        f"{'Tiêu chí so sánh':<32} | {'Trước Optimize (Baseline)':<30} | {'Sau Optimize (Composite Index)':<30} | {'Mức độ cải thiện'}"
+    )
     print("-" * 115)
-    print(f"{'Phương thức quét (Scan Type)':<32} | {metrics_before['scan_type']:<30} | {metrics_after['scan_type']:<30} | Loại bỏ quét thừa (0 rows removed)")
-    print(f"{'Thời gian thực thi (Execution)':<32} | {metrics_before['exec_time_ms']:>10.2f} ms{'':<17} | {metrics_after['exec_time_ms']:>10.2f} ms{'':<17} | Nhanh hơn {speedup:.1f} lần")
-    print(f"{'Chi phí truy vấn (Cost Score)':<32} | {metrics_before['cost_total']:>10.2f}{'':<20} | {metrics_after['cost_total']:>10.2f}{'':<20} | Giảm {cost_red:.1f}%")
-    print(f"{'Bộ nhớ đệm đọc (Buffers)':<32} | {metrics_before['buffers']:<30} | {metrics_after['buffers']:<30} | Tiết kiệm I/O tối đa")
+    print(
+        f"{'Phương thức quét (Scan Type)':<32} | {metrics_before['scan_type']:<30} | {metrics_after['scan_type']:<30} | Loại bỏ quét thừa (0 rows removed)"
+    )
+    print(
+        f"{'Thời gian thực thi (Execution)':<32} | {metrics_before['exec_time_ms']:>10.2f} ms{'':<17} | {metrics_after['exec_time_ms']:>10.2f} ms{'':<17} | Nhanh hơn {speedup:.1f} lần"
+    )
+    print(
+        f"{'Chi phí truy vấn (Cost Score)':<32} | {metrics_before['cost_total']:>10.2f}{'':<20} | {metrics_after['cost_total']:>10.2f}{'':<20} | Giảm {cost_red:.1f}%"
+    )
+    print(
+        f"{'Bộ nhớ đệm đọc (Buffers)':<32} | {metrics_before['buffers']:<30} | {metrics_after['buffers']:<30} | Tiết kiệm I/O tối đa"
+    )
     print("=" * 115)
 
 
@@ -444,9 +528,9 @@ def main():
         sync_data_from_lakehouse(conn)
         benchmark_dwh_indexing(conn)
         print("\n" + "=" * 80)
-        print(" 🎉 HOÀN THÀNH THIẾT LẬP DATA WAREHOUSE VÀ BENCHMARK INDEXING!")
+        print(" [OK] HOAN THANH THIET LAP DATA WAREHOUSE VA BENCHMARK INDEXING!")
         print("=" * 80)
-        print(" 📌 THÔNG TIN KẾT NỐI DBEAVER:")
+        print(" THONG TIN KET NOI DBEAVER:")
         print("    - Host     : localhost")
         print("    - Port     : 5432")
         print("    - Database : ecom_dwh")
@@ -456,6 +540,7 @@ def main():
         print("=" * 80 + "\n")
     finally:
         conn.close()
+
 
 if __name__ == "__main__":
     main()

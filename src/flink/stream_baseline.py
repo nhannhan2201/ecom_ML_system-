@@ -1,36 +1,10 @@
-"""
-================================================================================
-SRC/FLINK/STREAM_BASELINE.PY - FLINK STREAMING BASELINE (CHƯA TỐI ƯU)
-Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Mục tiêu Rubric: Flink Baseline without optimization (2.0 điểm)
-================================================================================
+"""Flink Streaming Processing Baseline (Unoptimized).
 
-MỤC ĐÍCH THIẾT KẾ BASELINE:
-Tạo ra một Streaming Pipeline ở trạng thái "ngây thơ" (chưa được tối ưu hóa)
-nhằm làm bộc lộ rõ ràng 3 vấn đề streaming phổ biến trên Flink Web UI:
-
-1. BỘC LỘ LỖI 1 - BURST TRAFFIC (LƯU LƯỢNG TĂNG ĐỘT BIẾN):
-   - Cấu hình 'parallelism = 1' (chỉ sử dụng 1 luồng duy nhất).
-   - Topic Kafka có 3 partitions, nhưng chỉ 1 task slot duy nhất gánh toàn bộ.
-   - Khi Generator tăng tốc lên hàng nghìn msg/s, TaskManager sẽ bị nghẽn cổ chai:
-     -> Quan sát trên Flink UI (Tab Backpressure) sẽ chuyển sang màu ĐỎ (HIGH).
-
-2. BỘC LỘ LỖI 2 - LATE ARRIVAL (DỮ LIỆU ĐẾN TRỄ):
-   - Đặt Watermark cực ngắn: 'INTERVAL 2 SECOND' và KHÔNG cho phép trễ (Allowed Lateness = 0).
-   - Dữ liệu từ Generator có 5% sự kiện bị trễ 5 - 10 phút (do nghẽn mạng).
-   - Flink sẽ thẳng tay vứt bỏ toàn bộ các sự kiện này:
-     -> Quan sát trên Flink UI (Metric: 'numLateRecordsDropped') sẽ tăng mạnh (> 0).
-
-3. BỘC LỘ LỖI 3 - STREAMING DUPLICATE (DỮ LIỆU BỊ TRÙNG LẶP):
-   - Pipeline KHÔNG sử dụng cơ chế lọc trùng (không có State Deduplication).
-   - 1.5% sự kiện bị gửi trùng từ Producer sẽ được Flink tính toán nhiều lần:
-     -> Dẫn đến số đếm (COUNT) và tổng doanh thu (SUM) của Window bị thổi phồng sai lệch.
-
-4. XỬ LÝ CỬA SỔ (WINDOW PROCESSING - RUBRIC: 2.0 ĐIỂM):
-   - Sử dụng Tumbling Window 15 phút tính toán 4 Real-time Features [D, E] cho từng user_id:
-     f_views_15m, f_carts_15m, f_purchases_15m, total_spend_15m.
-   - Do không có Deduplication, các sự kiện gửi lặp (duplicate) sẽ bị tính dồn làm sai lệch features!
-================================================================================
+Runs stream processing without optimizations to demonstrate bottlenecks:
+- Parallelism=1 creating backpressure under burst traffic.
+- 2-second short watermark dropping 5-10m late-arriving events.
+- Absence of deduplication causing inflated window feature counts.
+- Tumbling window (15m) without state TTL.
 """
 
 import os
@@ -39,41 +13,28 @@ from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.table import StreamTableEnvironment
 
 # ------------------------------------------------------------------------------
-# 1. CẤU HÌNH THÔNG SỐ BASELINE
+# 1. CAU HINH THONG SO BASELINE
 # ------------------------------------------------------------------------------
-# Tự động nhận diện chạy trong Cluster Docker hay chạy Local Terminal:
 IS_CLUSTER = os.getenv("FLINK_RUN_MODE", "cluster").lower() == "cluster"
-
-# Kafka bootstrap server:
-# - Trong mạng Docker nội bộ Flink Cluster: ecom_kafka:29092
-# - Chạy từ máy Host trực tiếp: localhost:9092
 KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "ecom_kafka:29092" if IS_CLUSTER else "localhost:9092")
-KAFKA_TOPIC     = "ecommerce_stream_events"
-GROUP_ID        = "flink_stream_baseline_group"
+KAFKA_TOPIC = "ecommerce_stream_events"
+GROUP_ID = "flink_stream_baseline_group"
 
-# Cấu hình Cửa sổ Window và Watermark
-WINDOW_INTERVAL_MIN = int(os.getenv("FLINK_WINDOW_MIN", "15"))  # Tumbling Window 15 phút (Baseline)
-WATERMARK_DELAY_SEC = 2   # [BASELINE] Watermark quá ngắn (chỉ đợi 2 giây -> drop toàn bộ Late Events)
-BASELINE_PARALLELISM = 1  # [BASELINE] 1 luồng duy nhất (gây Backpressure khi có Burst)
+WINDOW_INTERVAL_MIN = int(os.getenv("FLINK_WINDOW_MIN", "15"))
+WATERMARK_DELAY_SEC = 2
+BASELINE_PARALLELISM = 1
 
 
 def build_and_run_baseline_job():
-    """Build and execute the baseline PyFlink stream processing job without optimizations.
-    
-    Demonstrates baseline architectural bottlenecks:
-      1. Single thread (Parallelism=1) leading to severe backpressure under burst traffic.
-      2. Naive 2-second watermark causing late-arriving events (5-10m) to be dropped.
-      3. Absence of state deduplication leading to corrupted feature counts from duplicate events.
-      4. Basic tumbling window (15m) aggregation printed to standard output.
-    """
+    """Build and execute the baseline PyFlink stream processing job without optimizations."""
     print("=" * 70)
-    print("🚀 ĐANG KHỞI CHẠY FLINK STREAMING BASELINE (CHƯA TỐI ƯU)...")
-    print(f"📡 Chế độ chạy       : {'Docker Flink Cluster' if IS_CLUSTER else 'Local MiniCluster'}")
-    print(f"🔗 Kafka Bootstrap   : {KAFKA_BOOTSTRAP}")
-    print(f"📦 Kafka Topic       : {KAFKA_TOPIC}")
-    print(f"⚙️  Parallelism       : {BASELINE_PARALLELISM} (Chưa mở rộng song song)")
-    print(f"⏳ Watermark Delay   : {WATERMARK_DELAY_SEC} giây (Chưa xử lý Late Arrival)")
-    print(f"⏱️  Tumbling Window  : {WINDOW_INTERVAL_MIN} phút (Tính toán Stream Features)")
+    print("KHOI CHAY FLINK STREAMING BASELINE (CHUA TOI UU)...")
+    print(f"Che do chay       : {'Docker Flink Cluster' if IS_CLUSTER else 'Local MiniCluster'}")
+    print(f"Kafka Bootstrap   : {KAFKA_BOOTSTRAP}")
+    print(f"Kafka Topic       : {KAFKA_TOPIC}")
+    print(f"Parallelism       : {BASELINE_PARALLELISM}")
+    print(f"Watermark Delay   : {WATERMARK_DELAY_SEC}s")
+    print(f"Tumbling Window   : {WINDOW_INTERVAL_MIN} phut")
     print("=" * 70)
 
     # 1. Khởi tạo Flink Configuration
@@ -126,11 +87,9 @@ def build_and_run_baseline_job():
         )
     """
     t_env.execute_sql(source_ddl)
-    print("✅ [1/3] Đã tạo bảng Kafka Source DDL thành công.")
+    print("[OK] [1/3] Da tao bang Kafka Source DDL thanh cong.")
 
-    # 5. Định nghĩa Bảng Sink xuất kết quả (PRINT SINK DDL)
-    # Schema khớp 100% với Optimized để so sánh trực diện (Apples-to-Apples Comparison):
-    # f_views_15m, f_carts_15m, f_purchases_15m, total_spend_15m
+    # 5. Dinh nghia Bang Sink xuat ket qua (PRINT SINK DDL)
     sink_ddl = """
         CREATE TABLE baseline_features_sink (
             window_start        TIMESTAMP(3),
@@ -146,11 +105,9 @@ def build_and_run_baseline_job():
         )
     """
     t_env.execute_sql(sink_ddl)
-    print("✅ [2/3] Đã tạo bảng Sink Table DDL thành công.")
+    print("[OK] [2/3] Da tao bang Sink Table DDL thanh cong.")
 
-    # 6. Truy vấn Streaming Window Features (CHƯA DEDUPLICATE)
-    # - [BASELINE FLAW]: Tính trực tiếp từ kafka_stream_events không qua Deduplication View
-    #   -> 1.5% - 5% sự kiện bị duplicate sẽ làm sai lệch, thổi phồng các feature f_views_15m, f_carts_15m, total_spend_15m!
+    # 6. Truy van Streaming Window Features
     insert_sql = f"""
         INSERT INTO baseline_features_sink
         SELECT
@@ -167,16 +124,16 @@ def build_and_run_baseline_job():
             TUMBLE(row_time, INTERVAL '{WINDOW_INTERVAL_MIN}' MINUTE)
     """
 
-    print("⚡ [3/3] Đang submit truy vấn Streaming SQL vào Flink Engine...")
+    print("[INFO] [3/3] Submitting streaming SQL query into Flink Engine...")
     result = t_env.execute_sql(insert_sql)
 
     try:
         job_client = result.get_job_client()
         if job_client:
-            print(f"🎉 JOB BASELINE ĐÃ SUBMIT THÀNH CÔNG! Job ID: {job_client.get_job_id()}")
-            print("👉 Mời bạn truy cập Flink Web UI để quan sát: http://localhost:8081/#/running-jobs")
+            print(f"[OK] BASELINE JOB SUBMITTED SUCCESSFULLY! Job ID: {job_client.get_job_id()}")
+            print("Flink Web UI: http://localhost:8081/#/running-jobs")
     except Exception as e:
-        print(f"Job đang thực thi (Status: {e})")
+        print(f"Job is running (Status: {e})")
 
 
 if __name__ == "__main__":

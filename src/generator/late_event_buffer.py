@@ -79,5 +79,5 @@ class LateEventBuffer:
             "median": round(float(np.median(arr)), 2),
             "max": round(float(np.max(arr)), 2),
             "mean": round(float(np.mean(arr)), 2),
-            "count": len(self._delays_minutes)
+            "count": len(self._delays_minutes),
         }

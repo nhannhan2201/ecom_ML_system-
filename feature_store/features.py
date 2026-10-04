@@ -47,7 +47,7 @@ batch_source_30d = FileSource(
 user_batch_features_30d = FeatureView(
     name="user_batch_features_30d",
     entities=[user_entity],
-    ttl=timedelta(days=30),  # Rubric 4.7: Thói quen tiêu dùng có giá trị trong 30 ngày
+    ttl=timedelta(days=30),  # Thoi quen tieu dung co gia tri trong 30 ngay
     schema=[
         Field(name="f_views_30d", dtype=Int64, description="Số lượt xem hàng trong 30 ngày qua [A]"),
         Field(name="f_carts_30d", dtype=Int64, description="Số lượt thêm vào giỏ trong 30 ngày qua [B]"),
@@ -79,7 +79,7 @@ stream_push_source = PushSource(
 user_stream_features_15m = FeatureView(
     name="user_stream_features_15m",
     entities=[user_entity],
-    ttl=timedelta(hours=2),  # Rubric 4.7: Ý định mua hàng tức thời có giá trị trong 2 giờ
+    ttl=timedelta(hours=2),  # Y dinh mua hang tuc thoi co gia tri trong 2 gio
     schema=[
         Field(name="f_views_15m", dtype=Int64, description="Số lượt xem sản phẩm trong 15 phút qua [D]"),
         Field(name="f_carts_15m", dtype=Int64, description="Số lượt thêm vào giỏ trong 15 phút qua [E]"),

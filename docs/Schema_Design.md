@@ -91,19 +91,19 @@ CREATE TABLE gold.dim_product (
 ### Thuật toán sinh SCD Type 2 trên Apache Spark:
 ```python
 # Xác định mốc thay đổi thuộc tính đầu tiên
-dim_product_changes = (
-    df_silver.groupBy("product_id", "category_id", "category_level1", "brand", "price", "discount_percent")
-    .agg(F.min("event_timestamp").alias("valid_from_ts"))
-)
+dim_product_changes = df_silver.groupBy(
+    "product_id", "category_id", "category_level1", "brand", "price", "discount_percent"
+).agg(F.min("event_timestamp").alias("valid_from_ts"))
 # Khử trùng lặp trên cùng timestamp
 w_dedup = Window.partitionBy("product_id", "valid_from_ts").orderBy(F.col("price").desc_nulls_last())
-dim_product_dedup = dim_product_changes.withColumn("rn", F.row_number().over(w_dedup)).filter(F.col("rn") == 1).drop("rn")
+dim_product_dedup = (
+    dim_product_changes.withColumn("rn", F.row_number().over(w_dedup)).filter(F.col("rn") == 1).drop("rn")
+)
 
 # Áp dụng Window Function xác định khoảng [valid_from_ts, valid_to_ts)
 w_product = Window.partitionBy("product_id").orderBy("valid_from_ts")
 dim_product = (
-    dim_product_dedup
-    .withColumn("valid_to_ts", F.lead("valid_from_ts").over(w_product))
+    dim_product_dedup.withColumn("valid_to_ts", F.lead("valid_from_ts").over(w_product))
     .withColumn("is_current", F.when(F.col("valid_to_ts").isNull(), True).otherwise(False))
     .withColumn("product_sk", F.md5(F.concat_ws("_", F.col("product_id"), F.col("valid_from_ts"))))
 )

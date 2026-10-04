@@ -27,7 +27,7 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]
-ignore = ["E501", "W291", "W293", "F841", "E402"]
+ignore = ["E501", "W291", "W293", "E402"]
 exclude = [
     ".git",
     "__pycache__",

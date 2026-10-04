@@ -13,6 +13,7 @@ Purpose:
 import os
 import psycopg2
 
+
 def run_benchmark():
     host = os.environ.get("POSTGRES_DWH_HOST", "localhost")
     port = int(os.environ.get("POSTGRES_DWH_PORT", 5432))
@@ -21,13 +22,7 @@ def run_benchmark():
     password = os.environ.get("POSTGRES_DWH_PASSWORD", "postgres")
 
     print(f"Connecting to PostgreSQL DWH at {host}:{port}/{dbname}...")
-    conn = psycopg2.connect(
-        host=host,
-        port=port,
-        dbname=dbname,
-        user=user,
-        password=password
-    )
+    conn = psycopg2.connect(host=host, port=port, dbname=dbname, user=user, password=password)
     conn.autocommit = True
     cur = conn.cursor()
 
@@ -48,7 +43,7 @@ def run_benchmark():
         "--- QUERY BEING TESTED ---",
         test_query.strip(),
         "",
-        "--- 1. BASELINE EXECUTION (INDEX SCAN DISABLED: FORCED SEQUENTIAL SCAN) ---"
+        "--- 1. BASELINE EXECUTION (INDEX SCAN DISABLED: FORCED SEQUENTIAL SCAN) ---",
     ]
 
     # 1. Force Seq Scan
@@ -59,10 +54,9 @@ def run_benchmark():
     for row in seq_plan:
         output_lines.append(row[0])
 
-    output_lines.extend([
-        "",
-        "--- 2. OPTIMIZED EXECUTION (COMPOSITE B-TREE INDEX ENABLED: idx_fact_user_events_user_time) ---"
-    ])
+    output_lines.extend(
+        ["", "--- 2. OPTIMIZED EXECUTION (COMPOSITE B-TREE INDEX ENABLED: idx_fact_user_events_user_time) ---"]
+    )
 
     # 2. Enable Index Scan
     cur.execute("SET enable_indexscan = on;")
@@ -85,6 +79,7 @@ def run_benchmark():
 
     cur.close()
     conn.close()
+
 
 if __name__ == "__main__":
     run_benchmark()

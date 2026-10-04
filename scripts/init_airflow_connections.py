@@ -13,13 +13,19 @@ from airflow.models import Connection, Variable
 def init_connections():
     session = settings.Session()
     print("=" * 70)
-    print("🚀 Initializing Centralized Airflow Connections and Variables...")
+    print("[INFO] Initializing Centralized Airflow Connections and Variables...")
     print("   (Local Coursework Development Environment)")
     print("=" * 70)
 
     # Local development credentials (source of truth from environment or dev defaults)
-    minio_access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("MINIO_ROOT_USER", "minioadmin")
-    minio_secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    minio_access_key = (
+        os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("MINIO_ROOT_USER", "minioadmin")
+    )
+    minio_secret_key = (
+        os.getenv("MINIO_SECRET_KEY")
+        or os.getenv("AWS_SECRET_ACCESS_KEY")
+        or os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    )
     minio_endpoint = os.getenv("MINIO_INTERNAL_ENDPOINT") or os.getenv("MINIO_ENDPOINT", "http://ecom_minio:9000")
 
     pg_user = os.getenv("POSTGRES_DWH_USER") or os.getenv("POSTGRES_USER", "postgres")
@@ -38,7 +44,7 @@ def init_connections():
             login=minio_access_key,
             password=minio_secret_key,
             extra=json.dumps({"endpoint_url": minio_endpoint}),
-            description="MinIO S3 Object Storage for Lakehouse and Raw Buckets (Dev Creds)"
+            description="MinIO S3 Object Storage for Lakehouse and Raw Buckets (Dev Creds)",
         ),
         Connection(
             conn_id="postgres_dwh",
@@ -48,21 +54,21 @@ def init_connections():
             schema=pg_db,
             login=pg_user,
             password=pg_password,
-            description="PostgreSQL Data Warehouse for Analytical Star Schema"
+            description="PostgreSQL Data Warehouse for Analytical Star Schema",
         ),
         Connection(
             conn_id="spark_default",
             conn_type="generic",
             host="local[*]",
             port=4040,
-            description="Local Spark Driver / Master for Lakehouse Processing"
+            description="Local Spark Driver / Master for Lakehouse Processing",
         ),
         Connection(
             conn_id="redis_default",
             conn_type="redis",
             host=redis_host,
             port=redis_port,
-            description="Redis Online Store for Feast Feature Serving"
+            description="Redis Online Store for Feast Feature Serving",
         ),
     ]
 
@@ -100,7 +106,7 @@ def init_connections():
     session.commit()
     session.close()
     print("=" * 70)
-    print("✅ All Airflow Connections and Variables successfully initialized!")
+    print("[OK] All Airflow Connections and Variables successfully initialized!")
     print("=" * 70)
 
 

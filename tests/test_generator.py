@@ -23,11 +23,7 @@ import numpy as np
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from src.generator.batch_generator import (
-    BatchDataGenerator,
-    CANONICAL_9_COLUMNS,
-    CANONICAL_10_COLUMNS
-)
+from src.generator.batch_generator import BatchDataGenerator, CANONICAL_9_COLUMNS, CANONICAL_10_COLUMNS
 from src.generator.stream_generator import StreamDataGenerator
 from src.generator.late_event_buffer import LateEventBuffer
 
@@ -36,43 +32,33 @@ from src.generator.late_event_buffer import LateEventBuffer
 def sample_chunk_df():
     """Create a reproducible sample dataframe of 100 e-commerce raw events."""
     n_rows = 100
-    times = [
-        f"2019-10-01 {i % 24:02d}:{(i * 2) % 60:02d}:00 UTC"
-        for i in range(n_rows)
-    ]
-    return pd.DataFrame({
-        "event_time": times,
-        "event_type": ["view"] * 80 + ["cart"] * 15 + ["purchase"] * 5,
-        "product_id": list(range(1001, 1001 + n_rows)),
-        "category_id": [205301355] * n_rows,
-        "category_code": ["electronics.smartphone"] * n_rows,
-        "brand": ["samsung"] * 50 + ["apple"] * 30 + ["xiaomi"] * 20,
-        "price": [100.0 + i for i in range(n_rows)],
-        "user_id": [50000000 + (i % 20) for i in range(n_rows)],
-        "user_session": [f"session_{i % 10}" for i in range(n_rows)],
-    })
+    times = [f"2019-10-01 {i % 24:02d}:{(i * 2) % 60:02d}:00 UTC" for i in range(n_rows)]
+    return pd.DataFrame(
+        {
+            "event_time": times,
+            "event_type": ["view"] * 80 + ["cart"] * 15 + ["purchase"] * 5,
+            "product_id": list(range(1001, 1001 + n_rows)),
+            "category_id": [205301355] * n_rows,
+            "category_code": ["electronics.smartphone"] * n_rows,
+            "brand": ["samsung"] * 50 + ["apple"] * 30 + ["xiaomi"] * 20,
+            "price": [100.0 + i for i in range(n_rows)],
+            "user_id": [50000000 + (i % 20) for i in range(n_rows)],
+            "user_session": [f"session_{i % 10}" for i in range(n_rows)],
+        }
+    )
 
 
 @pytest.fixture
 def batch_generator_instance():
     """Instantiate BatchDataGenerator in dry-run mode to avoid S3 calls."""
-    gen = BatchDataGenerator(
-        config_path="config/generator_config.yaml",
-        mode="small",
-        dry_run=True
-    )
+    gen = BatchDataGenerator(config_path="config/generator_config.yaml", mode="small", dry_run=True)
     return gen
 
 
 def test_schema_evolution_part1(batch_generator_instance, sample_chunk_df):
     """Part 1 (01/10 -> 15/10) must contain exactly 9 canonical columns with NO discount_percent."""
     transformed_df, n_dup = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=False,
-        replica_idx=0,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=0.0
+        df_chunk=sample_chunk_df.copy(), is_part2=False, replica_idx=0, chunk_idx=0, part_idx=0, duplicate_rate=0.0
     )
 
     assert list(transformed_df.columns) == CANONICAL_9_COLUMNS
@@ -84,12 +70,7 @@ def test_schema_evolution_part1(batch_generator_instance, sample_chunk_df):
 def test_schema_evolution_part2(batch_generator_instance, sample_chunk_df):
     """Part 2 (16/10 -> 25/10) must contain exactly 10 canonical columns including discount_percent."""
     transformed_df, n_dup = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=True,
-        replica_idx=0,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=0.0
+        df_chunk=sample_chunk_df.copy(), is_part2=True, replica_idx=0, chunk_idx=0, part_idx=0, duplicate_rate=0.0
     )
 
     assert list(transformed_df.columns) == CANONICAL_10_COLUMNS
@@ -103,12 +84,7 @@ def test_schema_evolution_part2(batch_generator_instance, sample_chunk_df):
 def test_duplicate_rate_injection(batch_generator_instance, sample_chunk_df, dup_rate):
     """Verify that duplicate injection strictly adds the expected number of duplicate records."""
     transformed_df, n_dup = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=False,
-        replica_idx=0,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=dup_rate
+        df_chunk=sample_chunk_df.copy(), is_part2=False, replica_idx=0, chunk_idx=0, part_idx=0, duplicate_rate=dup_rate
     )
 
     expected_dups = int(len(sample_chunk_df) * dup_rate)
@@ -119,31 +95,16 @@ def test_duplicate_rate_injection(batch_generator_instance, sample_chunk_df, dup
 def test_seed_sequence_reproducibility(batch_generator_instance, sample_chunk_df):
     """Same parameters and seed sequence must yield identical chunks."""
     df1, _ = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=True,
-        replica_idx=1,
-        chunk_idx=2,
-        part_idx=0,
-        duplicate_rate=0.05
+        df_chunk=sample_chunk_df.copy(), is_part2=True, replica_idx=1, chunk_idx=2, part_idx=0, duplicate_rate=0.05
     )
     df2, _ = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=True,
-        replica_idx=1,
-        chunk_idx=2,
-        part_idx=0,
-        duplicate_rate=0.05
+        df_chunk=sample_chunk_df.copy(), is_part2=True, replica_idx=1, chunk_idx=2, part_idx=0, duplicate_rate=0.05
     )
     pd.testing.assert_frame_equal(df1, df2)
 
     # Different chunk_idx must produce different random patterns
     df3, _ = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=True,
-        replica_idx=1,
-        chunk_idx=3,
-        part_idx=0,
-        duplicate_rate=0.05
+        df_chunk=sample_chunk_df.copy(), is_part2=True, replica_idx=1, chunk_idx=3, part_idx=0, duplicate_rate=0.05
     )
     assert not df1.equals(df3)
 
@@ -162,7 +123,7 @@ def test_deterministic_user_id_offset(batch_generator_instance, sample_chunk_df)
         replica_idx=replica_idx,
         chunk_idx=0,
         part_idx=0,
-        duplicate_rate=0.0
+        duplicate_rate=0.0,
     )
 
     # Check session suffix
@@ -190,7 +151,7 @@ def test_deterministic_price_jitter(batch_generator_instance, sample_chunk_df):
         replica_idx=replica_idx,
         chunk_idx=0,
         part_idx=0,
-        duplicate_rate=0.0
+        duplicate_rate=0.0,
     )
 
     orig_prices = sample_chunk_df["price"].values
@@ -209,16 +170,11 @@ def test_skew_injection_consistent_sessions(batch_generator_instance, sample_chu
         "column": "user_id",
         "top_k_keys": [999999999, 888888888],
         "hot_ratio": 0.40,
-        "sessions_per_key": 20
+        "sessions_per_key": 20,
     }
 
     transformed_df, _ = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=False,
-        replica_idx=0,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=0.0
+        df_chunk=sample_chunk_df.copy(), is_part2=False, replica_idx=0, chunk_idx=0, part_idx=0, duplicate_rate=0.0
     )
 
     hot_keys = [999999999, 888888888]
@@ -272,7 +228,17 @@ def test_stream_parse_csv_line():
     gen.include_discount = True
     gen.discount_vals = [4, 5, 8, 10, 12]
 
-    header_cols = ["event_time", "event_type", "product_id", "category_id", "category_code", "brand", "price", "user_id", "user_session"]
+    header_cols = [
+        "event_time",
+        "event_type",
+        "product_id",
+        "category_id",
+        "category_code",
+        "brand",
+        "price",
+        "user_id",
+        "user_session",
+    ]
     valid_line = "2019-10-26 10:00:00 UTC,view,1004856,2053013555631882655,electronics.smartphone,samsung,130.50,51234567,session_abc123"
 
     event = gen._parse_csv_line(valid_line, header_cols)
@@ -289,7 +255,7 @@ def test_stream_parse_csv_line():
 @given(
     dup_rate=st.floats(min_value=0.0, max_value=0.20),
     is_part2=st.booleans(),
-    chunk_size=st.integers(min_value=20, max_value=80)
+    chunk_size=st.integers(min_value=20, max_value=80),
 )
 @settings(max_examples=15, deadline=None)
 def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2, chunk_size):
@@ -300,25 +266,22 @@ def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2, chunk_size):
     3. Repeated calls with identical parameters yield identical outputs.
     """
     gen = BatchDataGenerator(config_path="config/generator_config.yaml", dry_run=True)
-    sample_df = pd.DataFrame({
-        "event_time": [f"2019-10-01 10:{(i // 60):02d}:{(i % 60):02d} UTC" for i in range(chunk_size)],
-        "event_type": ["view"] * chunk_size,
-        "product_id": list(range(1, chunk_size + 1)),
-        "category_id": [100] * chunk_size,
-        "category_code": ["test"] * chunk_size,
-        "brand": ["brand_a"] * chunk_size,
-        "price": [50.0] * chunk_size,
-        "user_id": list(range(100, 100 + chunk_size)),
-        "user_session": [f"s_{i}" for i in range(chunk_size)]
-    })
+    sample_df = pd.DataFrame(
+        {
+            "event_time": [f"2019-10-01 10:{(i // 60):02d}:{(i % 60):02d} UTC" for i in range(chunk_size)],
+            "event_type": ["view"] * chunk_size,
+            "product_id": list(range(1, chunk_size + 1)),
+            "category_id": [100] * chunk_size,
+            "category_code": ["test"] * chunk_size,
+            "brand": ["brand_a"] * chunk_size,
+            "price": [50.0] * chunk_size,
+            "user_id": list(range(100, 100 + chunk_size)),
+            "user_session": [f"s_{i}" for i in range(chunk_size)],
+        }
+    )
 
     out1, n_dup1 = gen._transform_chunk(
-        sample_df.copy(),
-        is_part2=is_part2,
-        replica_idx=1,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=dup_rate
+        sample_df.copy(), is_part2=is_part2, replica_idx=1, chunk_idx=0, part_idx=0, duplicate_rate=dup_rate
     )
     expected_dups = int(chunk_size * dup_rate)
     assert n_dup1 == expected_dups
@@ -329,12 +292,7 @@ def test_transform_chunk_hypothesis_invariants(dup_rate, is_part2, chunk_size):
 
     # Determinism
     out2, n_dup2 = gen._transform_chunk(
-        sample_df.copy(),
-        is_part2=is_part2,
-        replica_idx=1,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=dup_rate
+        sample_df.copy(), is_part2=is_part2, replica_idx=1, chunk_idx=0, part_idx=0, duplicate_rate=dup_rate
     )
     pd.testing.assert_frame_equal(out1, out2)
 
@@ -356,12 +314,7 @@ def test_batch_generator_drift_injection(batch_generator_instance, sample_chunk_
     """Verify that opt-in drift increases prices by drift_factor on Part 2."""
     batch_generator_instance.drift_cfg = {"enabled": True, "column": "price", "drift_factor": 2.0}
     transformed_df, _ = batch_generator_instance._transform_chunk(
-        df_chunk=sample_chunk_df.copy(),
-        is_part2=True,
-        replica_idx=0,
-        chunk_idx=0,
-        part_idx=0,
-        duplicate_rate=0.0
+        df_chunk=sample_chunk_df.copy(), is_part2=True, replica_idx=0, chunk_idx=0, part_idx=0, duplicate_rate=0.0
     )
     orig_prices = sample_chunk_df["price"].values
     trans_prices = transformed_df["price"].values
@@ -370,14 +323,10 @@ def test_batch_generator_drift_injection(batch_generator_instance, sample_chunk_
 
 def test_batch_generator_save_manifest_local(batch_generator_instance, tmp_path):
     """Verify _save_manifest writes valid JSON manifest."""
-    manifest = {
-        "status": "COMPLETED",
-        "mode": "test",
-        "total_records": 100,
-        "execution_date": "2026-10-04"
-    }
+    manifest = {"status": "COMPLETED", "mode": "test", "total_records": 100, "execution_date": "2026-10-04"}
     batch_generator_instance._save_manifest(manifest)
     import json
+
     with open("data/generation_manifest.json", "r", encoding="utf-8") as f:
         loaded = json.load(f)
     assert loaded["status"] == "COMPLETED"
@@ -399,12 +348,13 @@ def test_stream_generator_checkpoint_and_manifest(tmp_path):
         "late_released": 20,
         "burst_events": 50,
         "last_event_time": "2019-10-26 12:00:00 UTC",
-        "byte_offset": 12345
+        "byte_offset": 12345,
     }
 
     # Test save checkpoint
     gen._save_checkpoint(12345)
     import json
+
     with open(gen.checkpoint_file, "r", encoding="utf-8") as f:
         cp = json.load(f)
     assert cp["byte_offset"] == 12345

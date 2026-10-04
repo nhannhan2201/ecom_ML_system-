@@ -41,13 +41,20 @@ from botocore.exceptions import ClientError
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [BatchDataGenerator] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("BatchDataGenerator")
 
 CANONICAL_9_COLUMNS = [
-    "event_time", "event_type", "product_id", "category_id",
-    "category_code", "brand", "price", "user_id", "user_session"
+    "event_time",
+    "event_type",
+    "product_id",
+    "category_id",
+    "category_code",
+    "brand",
+    "price",
+    "user_id",
+    "user_session",
 ]
 CANONICAL_10_COLUMNS = CANONICAL_9_COLUMNS + ["discount_percent"]
 
@@ -66,7 +73,7 @@ class BatchDataGenerator:
         target_size_gb: float = None,
         skew_override: bool = False,
         dry_run: bool = False,
-        stats_only: bool = False
+        stats_only: bool = False,
     ):
         self.config_path = config_path
         self.config = self._load_config()
@@ -102,7 +109,9 @@ class BatchDataGenerator:
 
         if self.mode == "small":
             small_def = modes_def.get("small", {})
-            self.sample_size = sample_size or (small_def.get("sample_size", 1000000) if isinstance(small_def, dict) else small_def)
+            self.sample_size = sample_size or (
+                small_def.get("sample_size", 1000000) if isinstance(small_def, dict) else small_def
+            )
             self.target_size_gb = None
         elif self.mode == "medium":
             medium_def = modes_def.get("medium", {})
@@ -127,7 +136,9 @@ class BatchDataGenerator:
             self.sample_size = sample_size or self.batch_cfg.get("sample_size", 1000000)
             self.target_size_gb = target_size_gb
 
-        self.input_csv = self._resolve_input_csv() if not self.dry_run else self.batch_cfg.get("input_csv", "2019-Oct.csv")
+        self.input_csv = (
+            self._resolve_input_csv() if not self.dry_run else self.batch_cfg.get("input_csv", "2019-Oct.csv")
+        )
         self.s3_client = self._init_s3_client() if (not self.dry_run and not self.stats_only) else None
 
         logger.info(
@@ -158,9 +169,7 @@ class BatchDataGenerator:
         alt = os.path.join("..", csv_name)
         if os.path.exists(alt):
             return alt
-        raise FileNotFoundError(
-            f"Source file '{csv_name}' not found. Please place '2019-Oct.csv' in the project root."
-        )
+        raise FileNotFoundError(f"Source file '{csv_name}' not found. Please place '2019-Oct.csv' in the project root.")
 
     def _init_s3_client(self):
         """Initialize Boto3 S3 Client for MinIO."""
@@ -177,7 +186,7 @@ class BatchDataGenerator:
             endpoint_url=endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
-            region_name="us-east-1"
+            region_name="us-east-1",
         )
 
     def _ensure_bucket_exists(self, bucket_name: str):
@@ -197,7 +206,7 @@ class BatchDataGenerator:
         replica_idx: int = 0,
         chunk_idx: int = 0,
         part_idx: int = 0,
-        duplicate_rate: float = 0.02
+        duplicate_rate: float = 0.02,
     ) -> tuple[pd.DataFrame, int]:
         """
         Process a single data chunk:
@@ -246,7 +255,9 @@ class BatchDataGenerator:
                     h_prod = (h_prod ^ (h_prod >> np.uint64(16))) * np.uint64(0x27D4EB2F)
                     h_prod = h_prod ^ (h_prod >> np.uint64(15))
                 # Ratio in [-1.0, 1.0]
-                ratio = ((h_prod % np.uint64(10001)).astype(np.float64) / 5000.0 - 1.0) * (self.price_jitter_pct / 100.0)
+                ratio = ((h_prod % np.uint64(10001)).astype(np.float64) / 5000.0 - 1.0) * (
+                    self.price_jitter_pct / 100.0
+                )
                 df["price"] = np.round(df["price"].values * (1.0 + ratio), 2)
 
             # 1d. Distinct session suffix
@@ -326,9 +337,7 @@ class BatchDataGenerator:
             manifest_obj = "batch/generation_manifest.json"
             try:
                 self._upload_bytes_to_minio(
-                    json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8"),
-                    manifest_obj,
-                    bucket
+                    json.dumps(manifest_data, indent=2, ensure_ascii=False).encode("utf-8"), manifest_obj, bucket
                 )
                 logger.info(f"Uploaded manifest to s3://{bucket}/{manifest_obj}")
             except Exception as e:
@@ -356,7 +365,7 @@ class BatchDataGenerator:
             est_unique_users = int(base_unique_users * min(1.0, (self.sample_size or estimated_rows) / 42400000))
 
         total_disk, used_disk, free_disk = shutil.disk_usage(".")
-        free_disk_gb = free_disk / (1024 ** 3)
+        free_disk_gb = free_disk / (1024**3)
         required_disk_gb = target_gb * 1.3
 
         print("\n" + "=" * 85)
@@ -374,7 +383,9 @@ class BatchDataGenerator:
         print(f"   - Estimated Replicas:            {replicas_count}")
         print(f"   - New User ID Ratio per Replica: {self.new_user_pct}% (Offset: {self.id_offset:,})")
         print(f"   - Estimated Unique Users:        ~{est_unique_users:,} unique user_ids")
-        print(f"   - Product Price Jitter:          +-{self.price_jitter_pct}% (SCD2 version multiplier: {replicas_count}x)")
+        print(
+            f"   - Product Price Jitter:          +-{self.price_jitter_pct}% (SCD2 version multiplier: {replicas_count}x)"
+        )
         print("-" * 85)
         print("3. DISK SPACE REQUIREMENT CHECK:")
         print(f"   - Available disk space:          {free_disk_gb:.2f} GB")
@@ -392,7 +403,9 @@ class BatchDataGenerator:
         """
         sample_size = self.sample_size or 1000000
         half_sample = sample_size // 2
-        effective_date = self.batch_cfg.get("fault_injection", {}).get("schema_evolution", {}).get("effective_date", "2019-10-16")
+        effective_date = (
+            self.batch_cfg.get("fault_injection", {}).get("schema_evolution", {}).get("effective_date", "2019-10-16")
+        )
         skip_start = 20500000
         bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
         p1_obj = self.minio_cfg.get("part1_object_name", "batch/raw_events_old.csv")
@@ -439,12 +452,16 @@ class BatchDataGenerator:
         del p1_csv_bytes
 
         # Part 2: 16/10 -> 25/10 (10 columns with discount_percent)
-        logger.info(f"[Part 2]: Reading & processing {half_sample:,} rows from {effective_date} (skip {skip_start:,} rows)...")
+        logger.info(
+            f"[Part 2]: Reading & processing {half_sample:,} rows from {effective_date} (skip {skip_start:,} rows)..."
+        )
         p2_chunks = []
         rows_read_p2 = 0
         p2_dups = 0
 
-        for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)):
+        for chunk_idx, chunk in enumerate(
+            pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)
+        ):
             needed = half_sample - rows_read_p2
             if needed <= 0:
                 break
@@ -487,7 +504,7 @@ class BatchDataGenerator:
             actual_skew_stats = {
                 "hot_keys": hot_keys,
                 "hot_rows": int(hot_counts),
-                "hot_ratio_actual": round(float(hot_counts / total_rows), 4) if total_rows > 0 else 0.0
+                "hot_ratio_actual": round(float(hot_counts / total_rows), 4) if total_rows > 0 else 0.0,
             }
 
         print("\n" + "=" * 85)
@@ -530,12 +547,12 @@ class BatchDataGenerator:
                 "effective_date": effective_date,
                 "part1_columns": list(df_p1.columns),
                 "part2_columns": list(df_p2.columns),
-                "new_column": "discount_percent"
+                "new_column": "discount_percent",
             },
             "skew_config": self.skew_cfg,
             "skew_actual": actual_skew_stats,
             "drift_config": self.drift_cfg,
-            "stats_only": self.stats_only
+            "stats_only": self.stats_only,
         }
         self._save_manifest(manifest)
 
@@ -552,7 +569,7 @@ class BatchDataGenerator:
         # Check disk space if not stats_only
         if not self.stats_only:
             _, _, free_disk = shutil.disk_usage(".")
-            free_disk_gb = free_disk / (1024 ** 3)
+            free_disk_gb = free_disk / (1024**3)
             required_disk_gb = target_gb * 1.3
             if free_disk_gb < required_disk_gb:
                 raise RuntimeError(
@@ -578,7 +595,9 @@ class BatchDataGenerator:
         replica_idx = 0
 
         while p1_bytes_written < target_bytes_per_stage:
-            logger.info(f" -> Replica {replica_idx} for Stage 1 (Time shift: +{replica_idx * self.time_shift_days} days)...")
+            logger.info(
+                f" -> Replica {replica_idx} for Stage 1 (Time shift: +{replica_idx * self.time_shift_days} days)..."
+            )
             part_buffer = io.StringIO()
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
@@ -598,7 +617,7 @@ class BatchDataGenerator:
                     replica_idx=replica_idx,
                     chunk_idx=chunk_idx,
                     part_idx=p1_part_idx,
-                    duplicate_rate=dup_rate
+                    duplicate_rate=dup_rate,
                 )
                 csv_str = processed_chunk.to_csv(index=False, header=is_first_chunk_in_part, encoding="utf-8")
                 chunk_bytes_len = len(csv_str.encode("utf-8"))
@@ -643,12 +662,16 @@ class BatchDataGenerator:
         replica_idx = 0
 
         while p2_bytes_written < target_bytes_per_stage:
-            logger.info(f" -> Replica {replica_idx} for Stage 2 (Time shift: +{replica_idx * self.time_shift_days} days)...")
+            logger.info(
+                f" -> Replica {replica_idx} for Stage 2 (Time shift: +{replica_idx * self.time_shift_days} days)..."
+            )
             part_buffer = io.StringIO()
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
 
-            for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)):
+            for chunk_idx, chunk in enumerate(
+                pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)
+            ):
                 if p2_bytes_written >= target_bytes_per_stage:
                     break
 
@@ -663,7 +686,7 @@ class BatchDataGenerator:
                     replica_idx=replica_idx,
                     chunk_idx=chunk_idx,
                     part_idx=p2_part_idx,
-                    duplicate_rate=dup_rate
+                    duplicate_rate=dup_rate,
                 )
                 csv_str = processed_chunk.to_csv(index=False, header=is_first_chunk_in_part, encoding="utf-8")
                 chunk_bytes_len = len(csv_str.encode("utf-8"))
@@ -701,7 +724,7 @@ class BatchDataGenerator:
 
         total_time = time.time() - start_time
         total_bytes = p1_bytes_written + p2_bytes_written
-        total_gb = total_bytes / (1024 ** 3)
+        total_gb = total_bytes / (1024**3)
         total_rows = p1_rows_written + p2_rows_written
         total_dups = p1_dups_injected + p2_dups_injected
         actual_dup_rate = (total_dups / total_rows) * 100 if total_rows > 0 else 0.0
@@ -716,8 +739,12 @@ class BatchDataGenerator:
         print(f"   - Throughput:                    {total_gb / (total_time / 3600):.2f} GB/hour")
         print("-" * 90)
         print("2. PARTITION STRUCTURE ON MINIO / LAKEHOUSE:")
-        print(f"   - Stage 1 (raw_events_old, 9 cols):  {p1_part_idx} parts ({p1_bytes_written / (1024**3):.2f} GB, {p1_rows_written:,} rows)")
-        print(f"   - Stage 2 (raw_events_new, 10 cols): {p2_part_idx} parts ({p2_bytes_written / (1024**3):.2f} GB, {p2_rows_written:,} rows)")
+        print(
+            f"   - Stage 1 (raw_events_old, 9 cols):  {p1_part_idx} parts ({p1_bytes_written / (1024**3):.2f} GB, {p1_rows_written:,} rows)"
+        )
+        print(
+            f"   - Stage 2 (raw_events_new, 10 cols): {p2_part_idx} parts ({p2_bytes_written / (1024**3):.2f} GB, {p2_rows_written:,} rows)"
+        )
         print("-" * 90)
         print("3. QUALITY & SCHEMA VERIFICATION:")
         print("   - Schema Evolution: 9 cols pre-16/10 vs 10 cols post-16/10")
@@ -740,11 +767,11 @@ class BatchDataGenerator:
                 "effective_date": effective_date,
                 "part1_columns": CANONICAL_9_COLUMNS,
                 "part2_columns": CANONICAL_10_COLUMNS,
-                "new_column": "discount_percent"
+                "new_column": "discount_percent",
             },
             "skew_config": self.skew_cfg,
             "drift_config": self.drift_cfg,
-            "stats_only": self.stats_only
+            "stats_only": self.stats_only,
         }
         self._save_manifest(manifest)
 
@@ -760,13 +787,22 @@ class BatchDataGenerator:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="E-Commerce Batch Data Generator & Benchmark Scaler")
-    parser.add_argument("--mode", choices=["small", "medium", "full"], default=None, help="Generation mode: small (1M), medium (5GB), full (>=100GB)")
+    parser.add_argument(
+        "--mode",
+        choices=["small", "medium", "full"],
+        default=None,
+        help="Generation mode: small (1M), medium (5GB), full (>=100GB)",
+    )
     parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium sample)")
     parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB")
     parser.add_argument("--config", default="config/generator_config.yaml", help="Path to config YAML")
     parser.add_argument("--skewed", action="store_true", help="Enable opt-in synthetic skew injection")
-    parser.add_argument("--dry-run", action="store_true", help="Estimate metrics and disk requirements without writing data")
-    parser.add_argument("--stats-only", action="store_true", help="Run transformations and write manifest without uploading to MinIO")
+    parser.add_argument(
+        "--dry-run", action="store_true", help="Estimate metrics and disk requirements without writing data"
+    )
+    parser.add_argument(
+        "--stats-only", action="store_true", help="Run transformations and write manifest without uploading to MinIO"
+    )
     args = parser.parse_args()
 
     gen = BatchDataGenerator(
@@ -776,6 +812,6 @@ if __name__ == "__main__":
         target_size_gb=args.target_size_gb,
         skew_override=args.skewed,
         dry_run=args.dry_run,
-        stats_only=args.stats_only
+        stats_only=args.stats_only,
     )
     gen.run()

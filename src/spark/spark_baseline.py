@@ -1,38 +1,9 @@
-"""
-================================================================================
-SRC/SPARK/SPARK_BASELINE.PY - SPARK BATCH PROCESSING BASELINE (CHƯA TỐI ƯU)
-Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Mục tiêu Rubric Mini-Coursework: Spark job to handle offline data problems (16 điểm)
-- Tiêu chí 1: Baseline (without optimization) (2.0đ)
-- Minh chứng các lỗi: Skew (Straggler task), High Cardinality (Shuffle Spill),
-  Schema Evolution (Column mismatch), Offline Duplicates (2% duplicate)
-================================================================================
+"""Spark Batch Processing Baseline (Unoptimized).
 
-MỤC ĐÍCH CỦA FILE BASELINE:
-Chạy quy trình tính toán Batch Feature 30 ngày theo cách "ngây thơ" (Naive / Unoptimized):
-1. TẮT TẤT CẢ TỐI ƯU HÓA CỦA SPARK:
-   - Tắt Adaptive Query Execution (AQE): spark.sql.adaptive.enabled = false
-   - Tắt Skew Join Handler: spark.sql.adaptive.skewJoin.enabled = false
-   - Tắt Broadcast Join: spark.sql.autoBroadcastJoinThreshold = -1 (buộc dùng Shuffle Hash/Sort Merge Join)
-   - Giữ nguyên số partition mặc định: spark.sql.shuffle.partitions = 200
-   - Cấu hình RAM executor thấp (1GB) để bộc lộ rõ Shuffle Spill ra đĩa khi gặp High Cardinality.
-
-2. CỐ TÌNH ĐỂ LỘ 4 VẤN ĐỀ OFFLINE (THEO ĐÚNG CHUẨN RUBRIC):
-   - Vấn đề 1 (Data Skew): Join & GroupBy trực tiếp trên cột phân phối lệch nặng (category_code:
-     electronics.smartphone chiếm ~40%, top user có hàng ngàn events).
-     => Kết quả trên Spark UI: Xuất hiện 'Straggler Task' (199 task chạy rất nhanh, 1 task chạy lẹt đẹt).
-   - Vấn đề 2 (High Cardinality): COUNT(DISTINCT category_id) trên ID phân cấp 4 tầng sâu mà không
-     rút gọn cấp độ hay dùng giải thuật xấp xỉ.
-     => Kết quả trên Spark UI: Xuất hiện 'Shuffle Spill (Memory)' và 'Shuffle Spill (Disk)' màu vàng/đỏ.
-   - Vấn đề 3 (Schema Evolution): Đọc nối 2 file raw_events_old.csv (9 cột) và raw_events_new.csv (10 cột
-     có discount_percent) bằng phương thức đọc CSV thô, dẫn tới lệch schema hoặc mất mát cột.
-   - Vấn đề 4 (Offline Duplicates): Không thực hiện dropDuplicates(), để sót trọn vẹn 2% bản ghi trùng lặp
-     làm sai lệch số lượng order và tổng chi tiêu của user.
-
-3. MINH CHỨNG SPARK UI (http://localhost:4040):
-   - Script in ra URL và giữ Spark UI mở để người chấm / lập trình viên có thể mở trình duyệt
-     chụp ảnh Stages, Timeline, Shuffle Read/Write Size, Shuffle Spill.
-================================================================================
+Executes batch processing without optimizations to demonstrate bottlenecks:
+- Disables AQE, Skew Join handling, and Broadcast Joins (forces Sort-Merge Join).
+- Skips deduplication, high-cardinality approximation, and schema enforcement.
+- Serves as the baseline comparison point for Spark optimization experiments.
 """
 
 import os
@@ -42,11 +13,10 @@ import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 
-# Thiết lập logging chuẩn hóa
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] [SPARK-BASELINE] %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 logger = logging.getLogger("SparkBaseline")
 
@@ -66,14 +36,13 @@ def create_baseline_spark_session() -> SparkSession:
         raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
     spark = (
-        SparkSession.builder
-        .appName("ECom-Spark-Offline-Baseline")
+        SparkSession.builder.appName("ECom-Spark-Offline-Baseline")
         .master("local[*]")
         .config(
             "spark.jars.packages",
             "org.apache.hadoop:hadoop-aws:3.3.4,"
             "com.amazonaws:aws-java-sdk-bundle:1.12.262,"
-            "io.delta:delta-spark_2.12:3.0.0"
+            "io.delta:delta-spark_2.12:3.0.0",
         )
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
@@ -84,11 +53,11 @@ def create_baseline_spark_session() -> SparkSession:
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
         # [BASELINE ANTI-PATTERNS]:
-        .config("spark.sql.adaptive.enabled", "false") # Tắt AQE
-        .config("spark.sql.adaptive.skewJoin.enabled", "false") # Tắt xử lý Skew
+        .config("spark.sql.adaptive.enabled", "false")  # Tắt AQE
+        .config("spark.sql.adaptive.skewJoin.enabled", "false")  # Tắt xử lý Skew
         .config("spark.sql.adaptive.coalescePartitions.enabled", "false")
-        .config("spark.sql.autoBroadcastJoinThreshold", "-1") # Tắt Broadcast Join
-        .config("spark.sql.shuffle.partitions", "200") # Giữ mặc định 200 partitions
+        .config("spark.sql.autoBroadcastJoinThreshold", "-1")  # Tắt Broadcast Join
+        .config("spark.sql.shuffle.partitions", "200")  # Giữ mặc định 200 partitions
         .config("spark.executor.memory", "1g")
         .config("spark.driver.memory", "1g")
         .getOrCreate()
@@ -110,9 +79,9 @@ def run_baseline_pipeline():
     minio_raw_base = "s3a://ecommerce-raw/batch"
     minio_output_baseline = "s3a://ecommerce-lakehouse/baseline"
 
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(" BẮT ĐẦU CHẠY SPARK OFFLINE PIPELINE - BASELINE (WITHOUT OPTIMIZATION)")
-    print("="*80)
+    print("=" * 80)
 
     # --------------------------------------------------------------------------
     # BƯỚC 1: ĐỌC DỮ LIỆU THÔ & MINH HỌA VẤN ĐỀ SCHEMA EVOLUTION
@@ -149,7 +118,6 @@ def run_baseline_pipeline():
     step2_start = time.time()
 
     # Trong Baseline: HOÀN TOÀN BỎ QUA BƯỚC DEDUPLICATION
-    # Chúng ta đếm số lượng duplicate thực tế để làm bằng chứng cho Rubric
     approx_distinct_events = df_raw.select("user_id", "event_time", "product_id", "event_type").distinct().count()
     duplicate_count = raw_count - approx_distinct_events
     duplicate_rate = (duplicate_count / raw_count) * 100
@@ -159,6 +127,7 @@ def run_baseline_pipeline():
     logger.warning(f"  - Số bản ghi duy nhất: {approx_distinct_events:,}")
     logger.warning(f"  - Số bản ghi trùng lặp (Duplicate rác): {duplicate_count:,} (~{duplicate_rate:.2f}%)")
     logger.warning("  - BASELINE ACTION: Giữ nguyên toàn bộ duplicate trong pipeline, không lọc rác!")
+    logger.info(f"  - Thời gian kiểm tra: {time.time() - step2_start:.2f}s")
 
     # --------------------------------------------------------------------------
     # BƯỚC 3: MINH HỌA VẤN ĐỀ HIGH CARDINALITY & SHUFFLE SPILL (DISK/MEMORY)
@@ -178,14 +147,18 @@ def run_baseline_pipeline():
         F.count("event_type").alias("total_events"),
         F.countDistinct("category_id").alias("n_distinct_deep_categories"),
         F.countDistinct("user_session").alias("n_distinct_sessions"),
-        F.sum("price").alias("gross_spend")
+        F.sum("price").alias("gross_spend"),
     )
 
     # Trigger action để Spark thực hiện shuffle toàn diện
     high_card_count = high_card_agg.count()
     step3_duration = time.time() - step3_start
-    logger.info(f"-> Hoàn thành gom nhóm High Cardinality cho {high_card_count:,} users. Thời gian: {step3_duration:.2f}s")
-    logger.warning(" [KIỂM TRA SPARK UI]: Vào Stage Details của Stage vừa xong -> Cột 'Shuffle Spill (Memory)' & 'Shuffle Spill (Disk)'")
+    logger.info(
+        f"-> Hoàn thành gom nhóm High Cardinality cho {high_card_count:,} users. Thời gian: {step3_duration:.2f}s"
+    )
+    logger.warning(
+        " [KIỂM TRA SPARK UI]: Vào Stage Details của Stage vừa xong -> Cột 'Shuffle Spill (Memory)' & 'Shuffle Spill (Disk)'"
+    )
 
     # --------------------------------------------------------------------------
     # BƯỚC 4: MINH HỌA VẤN ĐỀ DATA SKEW & TASK STRAGGLER
@@ -201,33 +174,33 @@ def run_baseline_pipeline():
     #    khối lượng công việc gấp hàng chục lần các partition khác!
 
     # Tạo một dimension table giả lập từ chính danh mục sản phẩm (Product Catalog Metadata)
-    dim_categories = df_raw.select("category_code") \
-        .filter(F.col("category_code").isNotNull()) \
-        .distinct() \
-        .withColumn("category_tax_rate", F.when(F.col("category_code").like("electronics%"), 0.10).otherwise(0.05)) \
-        .withColumn("category_priority", F.when(F.col("category_code").like("electronics%"), "HIGH").otherwise("NORMAL"))
+    dim_categories = (
+        df_raw.select("category_code")
+        .filter(F.col("category_code").isNotNull())
+        .distinct()
+        .withColumn("category_tax_rate", F.when(F.col("category_code").like("electronics%"), 0.10).otherwise(0.05))
+        .withColumn(
+            "category_priority", F.when(F.col("category_code").like("electronics%"), "HIGH").otherwise("NORMAL")
+        )
+    )
 
     logger.info(" Đang thực hiện Shuffle Join trên key bị Skew (category_code) mà KHÔNG có AQE / Salting...")
 
     # Thực hiện phép SortMergeJoin / ShuffleHashJoin trên category_code
-    skewed_joined_df = df_raw.join(
-        dim_categories,
-        on="category_code",
-        how="inner"
-    )
+    skewed_joined_df = df_raw.join(dim_categories, on="category_code", how="inner")
 
     # Tính toán tổng hợp nặng trên từng ngành hàng để bộc lộ rõ Task Straggler
     category_summary = skewed_joined_df.groupBy("category_code", "category_priority").agg(
-        F.count("*").alias("event_count"),
-        F.sum("price").alias("total_revenue"),
-        F.avg("price").alias("avg_price")
+        F.count("*").alias("event_count"), F.sum("price").alias("total_revenue"), F.avg("price").alias("avg_price")
     )
 
     # Trigger action để Spark ghi nhận Stage Timeline bị lệch (Straggler task kéo dài)
     category_summary.write.mode("overwrite").format("parquet").save(f"{minio_output_baseline}/category_summary/")
     step4_duration = time.time() - step4_start
     logger.info(f"-> Hoàn thành Skewed Shuffle Join. Thời gian: {step4_duration:.2f}s")
-    logger.warning(" [KIỂM TRA SPARK UI]: Vào Stage Details -> Mở tab 'Event Timeline' để thấy Task Straggler bị lệch thời gian!")
+    logger.warning(
+        " [KIỂM TRA SPARK UI]: Vào Stage Details -> Mở tab 'Event Timeline' để thấy Task Straggler bị lệch thời gian!"
+    )
 
     # --------------------------------------------------------------------------
     # BƯỚC 5: TÍNH TOÁN BẢNG ROLLING WINDOW 30 NGÀY (FEAT_USER_30D) CHƯA TỐI ƯU
@@ -268,17 +241,17 @@ def run_baseline_pipeline():
     # --------------------------------------------------------------------------
     # TỔNG HỢP KẾT QUẢ VÀ HƯỚNG DẪN CHỤP MINH CHỨNG SPARK UI
     # --------------------------------------------------------------------------
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(" BẢNG TỔNG HỢP KẾT QUẢ CHẠY SPARK BASELINE (WITHOUT OPTIMIZATION)")
-    print("="*80)
+    print("=" * 80)
     print(f" 1. Tổng thời gian chạy toàn bộ Baseline Job: {total_duration:.2f} giây")
     print(f" 2. Dữ liệu đầu vào: {raw_count:,} dòng (bao gồm {duplicate_count:,} dòng rác trùng lặp)")
     print(f" 3. Vấn đề Duplicate: TỶ LỆ TRÙNG LẶP = {duplicate_rate:.2f}% (Chưa được xử lý)")
     print(" 4. Vấn đề Schema Evolution: Cột 'discount_percent' bị thiếu trong nửa đầu dữ liệu")
     print(" 5. Vấn đề High Cardinality: COUNT(DISTINCT category_id) gây Shuffle Spill Memory & Disk")
     print(" 6. Vấn đề Data Skew: Key 'electronics.smartphone' gây Task Straggler nghẽn Stage")
-    print("="*80)
-    print("\n HƯỚNG DẪN CHỤP MINH CHỨNG SPARK UI CHO RUBRIC (PORT 4040):")
+    print("=" * 80)
+    print("\n HUONG DAN KIEM TRA SPARK UI (PORT 4040):")
     print("  * Bước 1: Mở trình duyệt truy cập: http://localhost:4040")
     print("  * Bước 2: Vào tab 'Jobs' -> Chụp lại danh sách các Completed Jobs và thời gian.")
     print("  * Bước 3: Vào tab 'Stages' -> Nhấp vào Stage có Shuffle Read lớn nhất.")
@@ -288,14 +261,14 @@ def run_baseline_pipeline():
     print("  * Bước 5: Xem bảng 'Summary Metrics':")
     print("    - Cột Max vs 75th percentile của Duration và Shuffle Read Size có độ lệch cực lớn.")
     print("    - Xem các cột 'Shuffle Spill (Memory)' và 'Shuffle Spill (Disk)' có xuất hiện dung lượng.")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
 
     # Giữ SparkSession sống để người dùng trực tiếp mở trình duyệt kiểm tra Spark UI
-    print("\n" + "="*80)
+    print("\n" + "=" * 80)
     print(" SPARK UI ĐANG CHẠY TẠI: http://localhost:4040")
     print(" Anh hãy mở trình duyệt vào http://localhost:4040 để xem các Stage, Task Straggler và Shuffle Spill.")
     print(" Sau khi xem và chụp ảnh xong, hãy quay lại đây nhấn [ENTER] để kết thúc chương trình.")
-    print("="*80 + "\n")
+    print("=" * 80 + "\n")
     try:
         input(">>> Nhấn [ENTER] trên bàn phím để dừng SparkSession...")
     except (EOFError, KeyboardInterrupt):

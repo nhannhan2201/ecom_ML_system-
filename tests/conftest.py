@@ -30,7 +30,16 @@ if "airflow" not in sys.modules:
         class MockDAG:
             current_dag = None
 
-            def __init__(self, dag_id, description=None, schedule_interval=None, start_date=None, catchup=False, tags=None, default_args=None):
+            def __init__(
+                self,
+                dag_id,
+                description=None,
+                schedule_interval=None,
+                start_date=None,
+                catchup=False,
+                tags=None,
+                default_args=None,
+            ):
                 self.dag_id = dag_id
                 self.description = description
                 self.schedule_interval = schedule_interval

@@ -18,7 +18,7 @@ ENV = "PROD"
 @dataclass(frozen=True)
 class SchemaFieldSpec:
     """Specification of an individual dataset column/field in the DataHub catalog.
-    
+
     Attributes:
         name: Column name matching the physical storage column.
         type_name: Abstract DataHub type ('string', 'number', 'time', 'boolean').
@@ -26,6 +26,7 @@ class SchemaFieldSpec:
         nullable: Whether NULL values are permitted by the contract.
         is_primary_key: True if this column forms part of the table's primary key.
     """
+
     name: str
     type_name: str  # "string", "number", "time", "boolean"
     description: str
@@ -36,7 +37,7 @@ class SchemaFieldSpec:
 @dataclass(frozen=True)
 class AssertionSpec:
     """Specification of an automated data quality check or contract assertion.
-    
+
     Attributes:
         urn: Unique DataHub assertion URN.
         name: Short human-readable title for the assertion.
@@ -44,6 +45,7 @@ class AssertionSpec:
         logic: SQL/logical condition defining expected valid state.
         metric_name: Quality metric identifier tracked by DataHub.
     """
+
     urn: str
     name: str
     description: str
@@ -54,12 +56,13 @@ class AssertionSpec:
 @dataclass(frozen=True)
 class DataContractSpec:
     """Specification for a collection of data quality assertions forming a Data Contract.
-    
+
     Attributes:
         urn: Unique DataHub data contract URN.
         description: Objective and scope of this data contract.
         assertions: Tuple of AssertionSpec items evaluated against the dataset.
     """
+
     urn: str
     description: str
     assertions: Tuple[AssertionSpec, ...] = ()
@@ -68,7 +71,7 @@ class DataContractSpec:
 @dataclass(frozen=True)
 class DatasetSpec:
     """Specification of a physical dataset in the lakehouse or streaming platform.
-    
+
     Attributes:
         key: Internal registry lookup key.
         platform: Data platform identifier (e.g. 's3', 'kafka', 'delta').
@@ -81,6 +84,7 @@ class DatasetSpec:
         upstreams: List of upstream dataset URNs for lineage graph rendering.
         contract: Optional DataContractSpec containing quality assertions.
     """
+
     key: str
     platform: str
     name: str
@@ -96,13 +100,14 @@ class DatasetSpec:
 @dataclass(frozen=True)
 class DataProductSpec:
     """Specification of a logical Data Product grouping related analytical datasets.
-    
+
     Attributes:
         id: Unique identifier for the data product.
         name: Display name in DataHub UI.
         description: Value proposition and consumer audience for the product.
         dataset_keys: Tuple of dataset keys belonging to this data product.
     """
+
     id: str
     name: str
     description: str
@@ -114,12 +119,12 @@ class DataProductSpec:
 # ==============================================================================
 def make_dataset_urn(platform: str, path: str, env: str = ENV) -> str:
     """Construct a standardized DataHub dataset URN string.
-    
+
     Args:
         platform: Platform type identifier (e.g. 's3', 'kafka', 'delta', 'postgres').
         path: Path or topic identifier relative to the storage engine.
         env: Target environment ('PROD', 'DEV', etc.). Defaults to ENV.
-        
+
     Returns:
         Canonical URN string format: 'urn:li:dataset:(urn:li:dataPlatform:{platform},{path},{env})'
     """
@@ -213,7 +218,6 @@ DATASETS: Dict[str, DatasetSpec] = {
         ),
         upstreams=(RAW_STREAM_URN,),
     ),
-
     # --------------------------------------------------------------------------
     # 1. TẦNG BRONZE LAKEHOUSE
     # --------------------------------------------------------------------------
@@ -253,7 +257,6 @@ DATASETS: Dict[str, DatasetSpec] = {
             ),
         ),
     ),
-
     # --------------------------------------------------------------------------
     # 2. TẦNG SILVER LAKEHOUSE
     # --------------------------------------------------------------------------
@@ -293,7 +296,6 @@ DATASETS: Dict[str, DatasetSpec] = {
             ),
         ),
     ),
-
     # --------------------------------------------------------------------------
     # 3. TẦNG GOLD DATA WAREHOUSE (STAR SCHEMA & SCD2 / SNAPSHOT)
     # --------------------------------------------------------------------------
@@ -306,7 +308,9 @@ DATASETS: Dict[str, DatasetSpec] = {
         domain="urn:li:domain:gold_dwh",
         tags=("Gold", "DeltaLake", "Star_Schema", "SCD_Type_2", "Dimension"),
         schema_fields=(
-            SchemaFieldSpec("product_sk", "string", "Khóa thay thế Surrogate Key duy nhất (MD5 hash)", is_primary_key=True),
+            SchemaFieldSpec(
+                "product_sk", "string", "Khóa thay thế Surrogate Key duy nhất (MD5 hash)", is_primary_key=True
+            ),
             SchemaFieldSpec("product_id", "number", "Mã tự nhiên Natural Key"),
             SchemaFieldSpec("category_id", "number", "ID danh mục"),
             SchemaFieldSpec("category_level1", "string", "Ngành hàng cấp 1 rút gọn"),
@@ -376,7 +380,6 @@ DATASETS: Dict[str, DatasetSpec] = {
         ),
         upstreams=(SILVER_URN, GOLD_DIM_PROD_URN, GOLD_DIM_USER_URN),
     ),
-
     # --------------------------------------------------------------------------
     # 4. TẦNG GOLD FEATURE STORE & LABELS (FEAST & ML TRAINING)
     # --------------------------------------------------------------------------
@@ -462,7 +465,6 @@ DATASETS: Dict[str, DatasetSpec] = {
             ),
         ),
     ),
-
     # --------------------------------------------------------------------------
     # 5. TẦNG FEAST ONLINE STORE (REDIS)
     # --------------------------------------------------------------------------

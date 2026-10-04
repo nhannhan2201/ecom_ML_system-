@@ -38,7 +38,7 @@ def create_topic_if_not_exists(topic_name: str):
     for topic, f in fs.items():
         try:
             f.result()  # Chờ Kafka trả kết quả
-            print(f"[✓] Đã tạo thành công topic: '{topic}'")
+            print(f"[OK] Đã tạo thành công topic: '{topic}'")
         except Exception as e:
             print(f"[!] Không thể tạo topic: {e}")
 
@@ -53,7 +53,7 @@ def delivery_report(err, msg):
 
 def run_quickstart():
     print("\n" + "=" * 80)
-    print("🚀 BẮT ĐẦU QUICKSTART APACHE KAFKA (TESTING PRODUCER & CONSUMER)")
+    print("BAT DAU QUICKSTART APACHE KAFKA (TESTING PRODUCER & CONSUMER)")
     print("=" * 80)
 
     # 1. Tạo topic
@@ -73,7 +73,7 @@ def run_quickstart():
             "brand": "samsung",
             "price": 130.25,
             "user_id": 51234567,
-            "user_session": "a1b2c3d4-test-session-1"
+            "user_session": "a1b2c3d4-test-session-1",
         },
         {
             "event_time": "2019-10-26 12:00:03 UTC",
@@ -83,7 +83,7 @@ def run_quickstart():
             "brand": "samsung",
             "price": 130.25,
             "user_id": 51234567,
-            "user_session": "a1b2c3d4-test-session-1"
+            "user_session": "a1b2c3d4-test-session-1",
         },
         {
             "event_time": "2019-10-26 12:00:05 UTC",
@@ -93,7 +93,7 @@ def run_quickstart():
             "brand": "samsung",
             "price": 130.25,
             "user_id": 51234567,
-            "user_session": "a1b2c3d4-test-session-1"
+            "user_session": "a1b2c3d4-test-session-1",
         },
         {
             "event_time": "2019-10-26 11:50:00 UTC",  # Giả lập Late Arrival (trễ 10 phút)
@@ -104,7 +104,7 @@ def run_quickstart():
             "price": 949.00,
             "user_id": 52345678,
             "user_session": "e5f6g7h8-test-session-2",
-            "note": "SIMULATED_LATE_ARRIVAL"
+            "note": "SIMULATED_LATE_ARRIVAL",
         },
         {
             "event_time": "2019-10-26 12:00:05 UTC",  # Giả lập Duplicate
@@ -115,8 +115,8 @@ def run_quickstart():
             "price": 130.25,
             "user_id": 51234567,
             "user_session": "a1b2c3d4-test-session-1",
-            "note": "SIMULATED_DUPLICATE"
-        }
+            "note": "SIMULATED_DUPLICATE",
+        },
     ]
 
     for i, event in enumerate(sample_events, start=1):
@@ -128,14 +128,14 @@ def run_quickstart():
 
     # Đợi tất cả tin nhắn gửi xong
     producer.flush()
-    print("[✓] Đã gửi thành công 5 tin nhắn vào Kafka!")
+    print("[OK] Đã gửi thành công 5 tin nhắn vào Kafka!")
 
     # 3. Test Consumer
     print("\n--- BƯỚC 2: KHỞI TẠO CONSUMER & ĐỌC LẠI TIN NHẮN TỪ ĐẦU ---")
     consumer_conf = {
         "bootstrap.servers": BOOTSTRAP_SERVERS,
         "group.id": f"quickstart_group_{int(time.time())}",
-        "auto.offset.reset": "earliest"  # Đọc từ offset 0
+        "auto.offset.reset": "earliest",  # Đọc từ offset 0
     }
     consumer = Consumer(consumer_conf)
     consumer.subscribe([TOPIC_NAME])
@@ -156,7 +156,9 @@ def run_quickstart():
 
         received_count += 1
         data = json.loads(msg.value().decode("utf-8"))
-        print(f"[*] Nhận #{received_count} | Partition: {msg.partition()} | Offset: {msg.offset()} | User: {data['user_id']} | Event: {data['event_type']} | Time: {data['event_time']}")
+        print(
+            f"[*] Nhận #{received_count} | Partition: {msg.partition()} | Offset: {msg.offset()} | User: {data['user_id']} | Event: {data['event_type']} | Time: {data['event_time']}"
+        )
 
     consumer.close()
 

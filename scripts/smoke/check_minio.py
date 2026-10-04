@@ -10,6 +10,7 @@ import os
 import boto3
 from botocore.client import Config
 
+
 def main():
     # 1. KHỞI TẠO S3 CLIENT KẾT NỐI TỚI MINIO
     # - endpoint_url: Cổng 9000 là cổng tiếp nhận lệnh S3 API của MinIO
@@ -25,31 +26,31 @@ def main():
 
     print(f"⏳ Đang kết nối tới MinIO tại {endpoint}...")
     s3_client = boto3.client(
-        's3',
+        "s3",
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        config=Config(signature_version='s3v4'),
-        region_name='us-east-1'
+        config=Config(signature_version="s3v4"),
+        region_name="us-east-1",
     )
 
     # 2. DANH SÁCH BUCKET CẦN KHỞI TẠO CHO TOÀN BỘ HỆ THỐNG
     # - ecommerce-raw: Chứa dữ liệu CSV thô ban đầu (từ file 2019-Oct.csv hoặc generator)
     # - ecommerce-lakehouse: Chứa các tầng Medallion Delta Lake (bronze, silver, gold)
-    target_buckets = ['ecommerce-raw', 'ecommerce-lakehouse']
+    target_buckets = ["ecommerce-raw", "ecommerce-lakehouse"]
 
     print("\n--- BƯỚC 1: KIỂM TRA VÀ TẠO BUCKET ---")
     # Lấy danh sách các bucket hiện đang có trên MinIO
     response = s3_client.list_buckets()
-    existing_buckets = [b['Name'] for b in response.get('Buckets', [])]
+    existing_buckets = [b["Name"] for b in response.get("Buckets", [])]
 
     for bucket_name in target_buckets:
         if bucket_name not in existing_buckets:
             # Gọi API tạo bucket
             s3_client.create_bucket(Bucket=bucket_name)
-            print(f"✅ Đã tạo mới bucket: '{bucket_name}'")
+            print(f"[OK] Created bucket: '{bucket_name}'")
         else:
-            print(f"ℹ️ Bucket '{bucket_name}' đã tồn tại sẵn.")
+            print(f"[INFO] Bucket '{bucket_name}' already exists.")
 
     # 3. GHI THỬ MỘT FILE TEST LÊN MINIO ĐỂ KIỂM CHỨNG (PUT OBJECT)
     print("\n--- BƯỚC 2: UPLOAD FILE TEST LÊN BUCKET 'ecommerce-raw' ---")
@@ -60,23 +61,20 @@ def main():
         "Storage Layer L8 hoat dong hoan hao!"
     )
 
-    s3_client.put_object(
-        Bucket='ecommerce-raw',
-        Key=test_file_key,
-        Body=test_content.encode('utf-8')
-    )
-    print(f"✅ Đã upload thành công object: '{test_file_key}' vào bucket 'ecommerce-raw'")
+    s3_client.put_object(Bucket="ecommerce-raw", Key=test_file_key, Body=test_content.encode("utf-8"))
+    print(f"[OK] Uploaded object: '{test_file_key}' into bucket 'ecommerce-raw'")
 
     # 4. ĐỌC LẠI NỘI DUNG TỪ MINIO ĐỂ XÁC NHẬN (GET OBJECT)
     print("\n--- BƯỚC 3: ĐỌC LẠI DỮ LIỆU TỪ MINIO ĐỂ XÁC MINH ---")
-    obj = s3_client.get_object(Bucket='ecommerce-raw', Key=test_file_key)
-    downloaded_text = obj['Body'].read().decode('utf-8')
-    print("📄 Nội dung file vừa đọc lại từ MinIO:")
+    obj = s3_client.get_object(Bucket="ecommerce-raw", Key=test_file_key)
+    downloaded_text = obj["Body"].read().decode("utf-8")
+    print("Content read back from MinIO:")
     print("-" * 40)
     print(downloaded_text)
     print("-" * 40)
 
-    print("\n🎉 THÀNH CÔNG! Bây giờ bạn hãy mở trình duyệt Web (http://localhost:9001) và F5 để xem kết quả!")
+    print("\n[OK] MinIO Smoke test completed successfully (Console: http://localhost:9001)")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

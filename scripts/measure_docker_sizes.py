@@ -16,11 +16,7 @@ import subprocess
 def get_git_commit() -> str:
     """Return current git commit hash."""
     try:
-        return (
-            subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])
-            .decode()
-            .strip()
-        )
+        return subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode().strip()
     except Exception:
         return "unknown"
 
@@ -67,9 +63,7 @@ def main():
     for img_tag, desc in images:
         try:
             inspect_size = (
-                subprocess.check_output(
-                    ["docker", "image", "inspect", "--format", "{{.Size}}", img_tag]
-                )
+                subprocess.check_output(["docker", "image", "inspect", "--format", "{{.Size}}", img_tag])
                 .decode()
                 .strip()
             )
@@ -92,31 +86,21 @@ def main():
             )
 
             reduction_bytes = baseline_bytes - size_bytes
-            reduction_pct = (
-                (reduction_bytes / baseline_bytes) * 100
-                if baseline_bytes > 0
-                else 0
-            )
+            reduction_pct = (reduction_bytes / baseline_bytes) * 100 if baseline_bytes > 0 else 0
             reduction_str = (
                 f"-{reduction_bytes / (1024**2):.1f} MB ({reduction_pct:.1f}%)"
                 if reduction_bytes > 0
                 else "Baseline (0%)"
             )
 
-            table_data.append(
-                (img_tag, cli_size, size_bytes, reduction_str, desc)
-            )
-            out_lines.append(
-                f"{img_tag:<32} | {cli_size:<15} | {size_bytes:<16,} | {reduction_str:<20}"
-            )
+            table_data.append((img_tag, cli_size, size_bytes, reduction_str, desc))
+            out_lines.append(f"{img_tag:<32} | {cli_size:<15} | {size_bytes:<16,} | {reduction_str:<20}")
         except subprocess.CalledProcessError as e:
             out_lines.append(f"{img_tag:<32} | ERROR: {e}")
 
     out_lines.append("=" * 85)
     out_lines.append("")
-    out_lines.append(
-        "2. PHAN TICH CHI TIET TUNG LAYER CUA TUNG BIEN THE (TOP LAYERS)"
-    )
+    out_lines.append("2. PHAN TICH CHI TIET TUNG LAYER CUA TUNG BIEN THE (TOP LAYERS)")
     out_lines.append("=" * 85)
 
     for img_tag, desc in images:

@@ -1,7 +1,7 @@
-"""
-Kiểm thử truy xuất đặc trưng thời gian thực (Online Serving) từ Redis Online Store.
-Rubric 4.4 & 4.6: Low-latency Feature Retrieval (< 2ms) via Feast Client.
-Kiểm tra toàn diện 9 features: 5 Batch Features (30d) + 4 Stream Features (15m).
+"""Online Serving Benchmark for Feast Feature Store (Redis).
+
+Measures low-latency feature retrieval latency across single and batch entity queries
+for 9 features: 5 Batch Features (30d) + 4 Stream Features (15m).
 """
 
 import os
@@ -71,10 +71,10 @@ def get_real_user_ids_from_gold(limit: int = 5) -> list:
 
 def test_online_serving(custom_user_ids: list = None):
     """Query online feature vectors from the Redis online store for low-latency ML serving.
-    
+
     Retrieves both 30-day offline batch features (user_batch_features_30d) and 15-minute
     real-time stream features (user_stream_features_15m) using Feast store.get_online_features().
-    
+
     Args:
         custom_user_ids: Optional list of user IDs to query. If None, samples from MinIO Lakehouse.
     """
@@ -124,10 +124,7 @@ def test_online_serving(custom_user_ids: list = None):
     latencies = []
     for _ in range(10):
         t0 = time.perf_counter()
-        _ = store.get_online_features(
-            features=features_to_fetch,
-            entity_rows=single_user
-        )
+        _ = store.get_online_features(features=features_to_fetch, entity_rows=single_user)
         latencies.append((time.perf_counter() - t0) * 1000)
 
     avg_latency = sum(latencies) / len(latencies)
@@ -146,16 +143,20 @@ def test_online_serving(custom_user_ids: list = None):
     # 3. TRUY VAN BATCH NHIEU USER
     print("[KET QUA 9 DAC TRUNG LAY TU RAM REDIS]:")
     batch_users = [{"user_id": uid} for uid in sample_user_ids]
-    online_features = store.get_online_features(
-        features=features_to_fetch,
-        entity_rows=batch_users
-    )
+    online_features = store.get_online_features(features=features_to_fetch, entity_rows=batch_users)
 
     df_features = pd.DataFrame(online_features.to_dict())
     cols = [
         "user_id",
-        "f_views_30d", "f_carts_30d", "f_purchases_30d", "f_spend_30d", "f_distinct_categories_30d",
-        "f_views_15m", "f_carts_15m", "f_purchases_15m", "total_spend_15m"
+        "f_views_30d",
+        "f_carts_30d",
+        "f_purchases_30d",
+        "f_spend_30d",
+        "f_distinct_categories_30d",
+        "f_views_15m",
+        "f_carts_15m",
+        "f_purchases_15m",
+        "total_spend_15m",
     ]
     existing_cols = [c for c in cols if c in df_features.columns]
     df_features = df_features[existing_cols]

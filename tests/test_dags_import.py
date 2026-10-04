@@ -8,7 +8,6 @@ Validates:
 """
 
 
-
 def test_dags_import_and_structure():
     """Verify that all 4 Airflow DAGs import without errors and have expected configurations."""
     import dags.dp1_raw_to_bronze as dp1_module
@@ -45,6 +44,7 @@ def test_dags_zero_hardcoded_credentials():
 def test_dp1_dag_tasks_and_dependencies():
     """Verify DP1 tasks, execution sequence, and downstream trigger."""
     import dags.dp1_raw_to_bronze as dp1_module
+
     tasks = dp1_module.dag.tasks
 
     expected_tasks = {"ingest_stage", "validate_stage", "trigger_dp2_pipeline"}
@@ -65,6 +65,7 @@ def test_dp1_dag_tasks_and_dependencies():
 def test_dp2_dag_tasks_and_dependencies():
     """Verify DP2 tasks, execution sequence, and downstream trigger."""
     import dags.dp2_bronze_to_silver_and_gold as dp2_module
+
     tasks = dp2_module.dag.tasks
 
     expected_tasks = {"ingest_stage", "validate_stage", "trigger_dp3_pipeline"}
@@ -81,6 +82,7 @@ def test_dp2_dag_tasks_and_dependencies():
 def test_dp3_dag_tasks_and_dependencies():
     """Verify DP3 tasks, execution sequence, and downstream trigger."""
     import dags.dp3_compute_offline_features as dp3_module
+
     tasks = dp3_module.dag.tasks
 
     expected_tasks = {"ingest_stage", "validate_stage", "trigger_dp4_pipeline"}
@@ -97,6 +99,7 @@ def test_dp3_dag_tasks_and_dependencies():
 def test_dp4_dag_tasks_and_dependencies():
     """Verify DP4 tasks and execution sequence."""
     import dags.dp4_feast_materialize as dp4_module
+
     tasks = dp4_module.dag.tasks
 
     expected_tasks = {"task_validate_gold_source", "task_feast_incremental_materialize"}

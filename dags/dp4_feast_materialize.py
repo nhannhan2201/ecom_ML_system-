@@ -29,6 +29,7 @@ local_tz = pendulum.timezone("Asia/Ho_Chi_Minh")
 PYTHON_EXEC = Variable.get("python_exec_path", default_var=sys.executable)
 PROJECT_ROOT = Variable.get("project_root", default_var="/opt/airflow/ecom_project")
 
+
 def _get_minio_connection():
     """Lấy cấu hình kết nối MinIO tập trung từ Airflow Connection 'minio_s3_conn'."""
     try:
@@ -45,6 +46,7 @@ def _get_minio_connection():
         secret_key = Variable.get("aws_secret_access_key", default_var=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
         return ep, access_key, secret_key
 
+
 def _get_redis_connection():
     """Lấy cấu hình kết nối Redis tập trung từ Airflow Connection 'redis_default'."""
     try:
@@ -56,6 +58,7 @@ def _get_redis_connection():
         host = Variable.get("redis_host", default_var="ecom_redis")
         port = str(Variable.get("redis_port", default_var=6379))
         return host, port
+
 
 MINIO_ENDPOINT, AWS_ACCESS_KEY, AWS_SECRET_KEY = _get_minio_connection()
 REDIS_HOST, REDIS_PORT = _get_redis_connection()
@@ -96,12 +99,11 @@ with DAG(
     catchup=False,
     tags=["feature_store", "feast", "redis", "dp4", "materialize", "online_store"],
 ) as dag:
-
     # TASK 1: VALIDATE GOLD FEATURE SOURCE
     task_validate_gold_source = BashOperator(
         task_id="task_validate_gold_source",
         bash_command=(
-            f"{PYTHON_EXEC} -c \""
+            f'{PYTHON_EXEC} -c "'
             f"import os, s3fs; "
             f"k = os.environ.get('MINIO_ACCESS_KEY') or os.environ.get('AWS_ACCESS_KEY_ID', ''); "
             f"s = os.environ.get('MINIO_SECRET_KEY') or os.environ.get('AWS_SECRET_ACCESS_KEY', ''); "
@@ -109,7 +111,7 @@ with DAG(
             f"assert k and s, 'MinIO credentials must be configured in Airflow Connection minio_s3_conn'; "
             f"fs = s3fs.S3FileSystem(key=k, secret=s, client_kwargs={{'endpoint_url': ep}}); "
             f"assert fs.exists('ecommerce-lakehouse/gold/feat_user_30d'), 'MinIO Gold source not found!'; "
-            f"print('✅ MinIO Gold Feature Source is READY!')\""
+            f"print('[OK] MinIO Gold Feature Source is READY!')\""
         ),
         env=task_env,
         append_env=True,
@@ -119,10 +121,7 @@ with DAG(
     # TASK 2: FEAST INCREMENTAL MATERIALIZATION
     task_feast_incremental_materialize = BashOperator(
         task_id="task_feast_incremental_materialize",
-        bash_command=(
-            f"cd {PROJECT_ROOT}/feature_store && "
-            f"{PYTHON_EXEC} materialize.py --mode incremental"
-        ),
+        bash_command=(f"cd {PROJECT_ROOT}/feature_store && {PYTHON_EXEC} materialize.py --mode incremental"),
         env=task_env,
         append_env=True,
         execution_timeout=timedelta(minutes=10),

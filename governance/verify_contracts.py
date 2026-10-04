@@ -68,9 +68,7 @@ def check_bronze_nulls(df: pd.DataFrame) -> ContractResult:
     )
 
 
-def check_silver_duplicates(
-    df: pd.DataFrame, dedup_keys: list = None
-) -> ContractResult:
+def check_silver_duplicates(df: pd.DataFrame, dedup_keys: list = None) -> ContractResult:
     """Kiem tra hop dong Silver: bo khoa logic khong duoc phep trung lap."""
     if dedup_keys is None:
         dedup_keys = ["user_id", "event_time", "product_id", "event_type"]
@@ -114,9 +112,7 @@ def check_gold_scd2_integrity(df: pd.DataFrame) -> ContractResult:
     invalid_intervals = 0
     if "valid_from_ts" in df.columns and "valid_to_ts" in df.columns:
         has_to = df["valid_to_ts"].notna()
-        invalid_intervals = int(
-            (has_to & (df["valid_from_ts"] > df["valid_to_ts"])).sum()
-        )
+        invalid_intervals = int((has_to & (df["valid_from_ts"] > df["valid_to_ts"])).sum())
 
     duplicate_current = 0
     if "product_id" in df.columns and "is_current" in df.columns:
@@ -167,9 +163,7 @@ def check_gold_feast_schema(df: pd.DataFrame) -> ContractResult:
     )
 
 
-def check_gold_binary_labels(
-    df: pd.DataFrame, label_col: str = "target_purchase_1h"
-) -> ContractResult:
+def check_gold_binary_labels(df: pd.DataFrame, label_col: str = "target_purchase_1h") -> ContractResult:
     """Kiem tra hop dong nhan: target_purchase_1h phai thuoc tap {0, 1} va khong null."""
     if label_col not in df.columns:
         return ContractResult(
@@ -196,16 +190,8 @@ def check_gold_binary_labels(
 
 def get_s3fs():
     """Khoi tao s3fs S3FileSystem ket noi MinIO."""
-    access_key = (
-        os.getenv("MINIO_ACCESS_KEY")
-        or os.getenv("AWS_ACCESS_KEY_ID")
-        or "minioadmin"
-    )
-    secret_key = (
-        os.getenv("MINIO_SECRET_KEY")
-        or os.getenv("AWS_SECRET_ACCESS_KEY")
-        or "minioadmin"
-    )
+    access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+    secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
     return s3fs.S3FileSystem(
         key=access_key,
@@ -225,11 +211,7 @@ def emit_assertion_result(
 ):
     """Ban ket qua kiem dinh dong len DataHub GMS."""
     now_ms = int(time.time() * 1000)
-    res_type = (
-        AssertionResultTypeClass.SUCCESS
-        if is_passed
-        else AssertionResultTypeClass.FAILURE
-    )
+    res_type = AssertionResultTypeClass.SUCCESS if is_passed else AssertionResultTypeClass.FAILURE
     status_label = "PASSED" if is_passed else "FAILED"
 
     run_event = AssertionRunEventClass(
@@ -250,12 +232,8 @@ def emit_assertion_result(
         ),
     )
 
-    emitter.emit(
-        MetadataChangeProposalWrapper(entityUrn=assertion_urn, aspect=run_event)
-    )
-    print(
-        f"  [{status_label}] {assertion_urn.split(':')[-1]}: {metric_name}={metric_value}"
-    )
+    emitter.emit(MetadataChangeProposalWrapper(entityUrn=assertion_urn, aspect=run_event))
+    print(f"  [{status_label}] {assertion_urn.split(':')[-1]}: {metric_name}={metric_value}")
 
 
 def verify_all_contracts(gms_url: str = None):
@@ -263,9 +241,7 @@ def verify_all_contracts(gms_url: str = None):
     if not gms_url:
         gms_url = os.getenv("DATAHUB_GMS_URL", "http://localhost:8089")
     print("=" * 80)
-    print(
-        "[DATA QUALITY AUDIT] Kiem dinh hop dong du lieu Lakehouse (Sample-based 50k rows)"
-    )
+    print("[DATA QUALITY AUDIT] Kiem dinh hop dong du lieu Lakehouse (Sample-based 50k rows)")
     print("=" * 80)
     print(f"DataHub GMS Endpoint : {gms_url}")
     print(f"MinIO Endpoint       : {MINIO_ENDPOINT}")
@@ -349,9 +325,7 @@ def verify_all_contracts(gms_url: str = None):
     # 4. GOLD FEAST SCHEMA
     print("[4/5] Kiem dinh Gold Feature Store: feat_user_30d...")
     try:
-        tbl = pq.read_table(
-            "ecommerce-lakehouse/gold/feat_user_30d/", filesystem=fs
-        )
+        tbl = pq.read_table("ecommerce-lakehouse/gold/feat_user_30d/", filesystem=fs)
         df = tbl.slice(0, 10000).to_pandas()
         res = check_gold_feast_schema(df)
         emit_assertion_result(
@@ -397,9 +371,7 @@ def main():
     """Command-line entry point."""
     import argparse
 
-    parser = argparse.ArgumentParser(
-        description="Verify Data Contracts and Publish Results to DataHub"
-    )
+    parser = argparse.ArgumentParser(description="Verify Data Contracts and Publish Results to DataHub")
     parser.add_argument(
         "--gms-url",
         default=os.getenv("DATAHUB_GMS_URL", "http://localhost:8089"),

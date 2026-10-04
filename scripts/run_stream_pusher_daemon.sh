@@ -20,31 +20,31 @@ PID_FILE="${LOG_DIR}/stream_pusher.pid"
 case "$1" in
     start)
         if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
-            echo "⚠️  Feast Stream Pusher daemon đang chạy (PID: $(cat "${PID_FILE}"))"
+            echo "[WARN] Feast Stream Pusher daemon đang chạy (PID: $(cat "${PID_FILE}"))"
             exit 0
         fi
-        echo "🚀 Đang khởi động Feast Stream Pusher daemon (Dual-write Online Redis + Offline MinIO)..."
+        echo "[INFO] Đang khởi động Feast Stream Pusher daemon (Dual-write Online Redis + Offline MinIO)..."
         nohup "${PYTHON_BIN}" "${PROJECT_ROOT}/feature_store/stream_push_job.py" --target both > "${LOG_DIR}/stream_pusher.log" 2>&1 &
         echo $! > "${PID_FILE}"
-        echo "✅ Daemon đã khởi chạy thành công! PID: $(cat "${PID_FILE}")"
-        echo "📋 Xem log tại: tail -f ${LOG_DIR}/stream_pusher.log"
+        echo "[OK] Daemon đã khởi chạy thành công! PID: $(cat "${PID_FILE}")"
+        echo "Xem log tại: tail -f ${LOG_DIR}/stream_pusher.log"
         ;;
     stop)
         if [ -f "${PID_FILE}" ]; then
             PID="$(cat "${PID_FILE}")"
-            echo "🛑 Đang dừng Feast Stream Pusher daemon (PID: ${PID})..."
+            echo "[INFO] Đang dừng Feast Stream Pusher daemon (PID: ${PID})..."
             kill "${PID}" 2>/dev/null || true
             rm -f "${PID_FILE}"
-            echo "🔒 Daemon đã dừng."
+            echo "[OK] Daemon đã dừng."
         else
-            echo "⚠️  Không tìm thấy PID file. Daemon có thể chưa chạy."
+            echo "[WARN] Không tìm thấy PID file. Daemon có thể chưa chạy."
         fi
         ;;
     status)
         if [ -f "${PID_FILE}" ] && kill -0 "$(cat "${PID_FILE}")" 2>/dev/null; then
-            echo "🟢 Feast Stream Pusher daemon ĐANG CHẠY (PID: $(cat "${PID_FILE}"))"
+            echo "[RUNNING] Feast Stream Pusher daemon ĐANG CHẠY (PID: $(cat "${PID_FILE}"))"
         else
-            echo "🔴 Feast Stream Pusher daemon ĐÃ DỪNG"
+            echo "[STOPPED] Feast Stream Pusher daemon ĐÃ DỪNG"
         fi
         ;;
     *)

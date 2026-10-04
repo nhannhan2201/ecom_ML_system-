@@ -47,21 +47,24 @@ Name                                    Stmts   Miss  Cover   Missing
 ---------------------------------------------------------------------
 feature_store/__init__.py                   0      0   100%
 feature_store/features.py                  11     11     0%   10-97
-feature_store/historical_retrieval.py      83     83     0%   12-155
-feature_store/materialize.py              103    103     0%   10-188
-feature_store/stream_push_job.py          173    173     0%   11-307
+feature_store/historical_retrieval.py      83     83     0%   12-168
+feature_store/materialize.py              103    103     0%   8-184
+feature_store/stream_push_job.py          173    173     0%   7-308
 governance/catalog.py                      56      0   100%
-governance/sync_catalog.py                 95     95     0%   12-261
-governance/verify_contracts.py            138     63    54%   40, 199-210, 263-393, 398-410, 414
-src/flink/stream_baseline.py               52     52     0%   36-183
-src/flink/stream_optimized.py              92     92     0%   39-356
+governance/sync_catalog.py                 95     95     0%   12-357
+governance/verify_contracts.py            138     63    54%   40, 193-196, 241-367, 372-382, 386
+src/flink/__init__.py                       0      0   100%
+src/flink/stream_baseline.py               52     52     0%   10-140
+src/flink/stream_optimized.py              91     91     0%   11-300
 src/generator/__init__.py                   2      0   100%
-src/generator/batch_generator.py          491    302    38%   91, 115-116, 125-128, 143-147, 155-161, 167-175, 185-191, 222-223, 263, 309-314, 325-335, 356, 386, 393-540, 548-749, 753-758, 762-781
+src/generator/batch_generator.py          491    302    38%   98, 124-125, 134-137, 154-158, 166-172, 176-184, 194-200, 231-232, 274, 320-325, 336-344, 365, 397, 404-557, 565-776, 780-785, 789-817
 src/generator/late_event_buffer.py         33      0   100%
-src/generator/stream_generator.py         279    224    20%   32-33, 57-97, 101-110, 114-123, 127-155, 159-170, 192, 209-210, 214-226, 230-231, 274-427, 431-449, 454-468, 477
-src/spark/skew_experiment.py              148    148     0%   20-403
-src/spark/spark_baseline.py               118    118     0%   38-309
-src/spark/spark_optimized.py              329    329     0%   27-735
+src/generator/stream_generator.py         279    224    20%   32-33, 55-95, 99-108, 112-121, 125-153, 157-168, 186, 203-204, 208-215, 219-220, 256-413, 417-441, 446-460, 469
+src/spark/__init__.py                       0      0   100%
+src/spark/common.py                        61     61     0%   7-132
+src/spark/skew_experiment.py              146    146     0%   20-405
+src/spark/spark_baseline.py               119    119     0%   9-282
+src/spark/spark_optimized.py              283    283     0%   11-614
 ---------------------------------------------------------------------
-TOTAL                                    2203   1793    19%
-============================== 32 passed in 3.66s ==============================
+TOTAL                                    2216   1806    19%
+============================== 32 passed in 5.94s ==============================

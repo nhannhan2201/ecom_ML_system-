@@ -26,19 +26,10 @@ import pyarrow.dataset as ds
 import os
 
 S3_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
-S3_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
-S3_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
-if not S3_ACCESS_KEY:
-    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
-if not S3_SECRET_KEY:
-    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+S3_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or "minioadmin"
+S3_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
-fs = S3FileSystem(
-    endpoint_override=S3_ENDPOINT,
-    access_key=S3_ACCESS_KEY,
-    secret_key=S3_SECRET_KEY,
-    scheme="http"
-)
+fs = S3FileSystem(endpoint_override=S3_ENDPOINT, access_key=S3_ACCESS_KEY, secret_key=S3_SECRET_KEY, scheme="http")
 
 TABLE_MAP = {
     "bronze": "ecommerce-lakehouse/bronze/raw_events",
@@ -53,18 +44,12 @@ TABLE_MAP = {
 
 
 def get_table_dataset(table_path):
-    return ds.dataset(
-        table_path,
-        filesystem=fs,
-        format="parquet",
-        partitioning="hive",
-        ignore_prefixes=["_", "."]
-    )
+    return ds.dataset(table_path, filesystem=fs, format="parquet", partitioning="hive", ignore_prefixes=["_", "."])
 
 
 def summarize_all():
     print("\n" + "=" * 85)
-    print(" 📊 TỔNG HỢP TOÀN BỘ CÁC BẢNG TRONG MINIO DATA LAKEHOUSE")
+    print(" TONG HOP TOAN BO CAC BANG TRONG MINIO DATA LAKEHOUSE")
     print("=" * 85)
     print(f" {'Tên bảng (Zone / Name)':<32} | {'Số bản ghi':>12} | {'Số cột':>7} | {'Phân vùng (Partition)':<20}")
     print("-" * 85)
@@ -97,16 +82,13 @@ def summarize_all():
 
     # Kiểm tra Flink Staging
     try:
-        staging_files = fs.get_file_info(
-            ds.dataset("ecommerce-raw/staging/stream_events", filesystem=fs, format="json").files
-        )
         staging_count = sum(1 for _ in open_staging_sample(1000000))
         print(f" {'staging/stream_events (Flink)':<32} | {staging_count:>12,} | {10:>7} | JSON (Append-only)")
     except Exception:
         pass
 
     print("-" * 85)
-    print(f" 👉 Tổng số bản ghi quản lý trong Lakehouse: {total_rows:,} records")
+    print(f" [INFO] Tong so ban ghi quan ly trong Lakehouse: {total_rows:,} records")
     print("=" * 85 + "\n")
 
 
@@ -128,9 +110,9 @@ def inspect_table(key_or_name, limit=5):
     if key_or_name.lower() in TABLE_MAP:
         target_path = TABLE_MAP[key_or_name.lower()]
     elif key_or_name.lower() in ["staging", "stream_events"]:
-        print("\n📂 KIỂM TRA FLINK RAW STAGING: s3://ecommerce-raw/staging/stream_events/")
+        print("\nKIEM TRA FLINK RAW STAGING: s3://ecommerce-raw/staging/stream_events/")
         sample = list(open_staging_sample(limit))
-        print(f"🔍 Mẫu {len(sample)} sự kiện thô đầu tiên:")
+        print(f"Mau {len(sample)} su kien tho dau tien:")
         for idx, row in enumerate(sample, 1):
             print(f"  [{idx}] {json.dumps(row, ensure_ascii=False)}")
         return
@@ -141,37 +123,43 @@ def inspect_table(key_or_name, limit=5):
                 break
 
     if not target_path:
-        print(f"❌ Không tìm thấy bảng: '{key_or_name}'. Các bảng hợp lệ:")
+        print(f"[ERROR] Khong tim thay bang: '{key_or_name}'. Cac bang hop le:")
         print("   " + ", ".join(TABLE_MAP.keys()) + ", staging")
         return
 
     print("\n" + "=" * 80)
-    print(f" 🔍 CHI TIẾT BẢNG: {target_path}")
+    print(f" CHI TIET BANG: {target_path}")
     print("=" * 80)
     try:
         dataset = get_table_dataset(target_path)
         table = dataset.to_table()
-        print(f"📈 Tổng số bản ghi : {table.num_rows:,}")
-        print(f"📋 Tổng số cột     : {len(table.schema.names)}")
-        print("\n📝 DANH SÁCH CỘT VÀ KIỂU DỮ LIỆU:")
+        print(f"Tong so ban ghi : {table.num_rows:,}")
+        print(f"Tong so cot     : {len(table.schema.names)}")
+        print("\nDANH SACH COT VA KIEU DU LIEU:")
         for field in table.schema:
             print(f"  - {field.name:<28} : {str(field.type)}")
 
-        print(f"\n📄 MẪU {limit} DÒNG DỮ LIỆU ĐẦU TIÊN:")
+        print(f"\nMAU {limit} DONG DU LIEU DAU TIEN:")
         pydict = table.slice(0, limit).to_pydict()
         for i in range(min(limit, table.num_rows)):
             row = {col: pydict[col][i] for col in table.schema.names}
-            print(f"\n[Dòng {i+1}]:")
+            print(f"\n[Dòng {i + 1}]:")
             for col, val in row.items():
                 print(f"  {col:<26}: {val}")
         print("=" * 80 + "\n")
     except Exception as e:
-        print(f"❌ Lỗi khi đọc bảng: {e}")
+        print(f"[ERROR] Loi khi doc bang: {e}")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Công cụ kiểm tra nhanh MinIO Delta Lakehouse")
-    parser.add_argument("--table", "-t", type=str, default=None, help="Tên bảng cần xem chi tiết (fact, feat30d, labels, product, user, silver, bronze, staging)")
+    parser.add_argument(
+        "--table",
+        "-t",
+        type=str,
+        default=None,
+        help="Tên bảng cần xem chi tiết (fact, feat30d, labels, product, user, silver, bronze, staging)",
+    )
     parser.add_argument("--limit", "-n", type=int, default=3, help="Số dòng mẫu cần hiển thị (mặc định 3)")
     args = parser.parse_args()
 

@@ -65,7 +65,7 @@ def load_data_from_minio_or_local():
         endpoint_url=endpoint,
         aws_access_key_id=access_key,
         aws_secret_access_key=secret_key,
-        region_name="us-east-1"
+        region_name="us-east-1",
     )
 
     bucket = "ecommerce-raw"
@@ -121,7 +121,9 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
     # Strict integrity assertion against generation manifest
     manifest_rows = manifest.get("total_rows")
     if manifest_rows is not None and total_rows != manifest_rows:
-        error_msg = f"Profile row count mismatch: profiled {total_rows} rows but manifest specifies {manifest_rows} rows!"
+        error_msg = (
+            f"Profile row count mismatch: profiled {total_rows} rows but manifest specifies {manifest_rows} rows!"
+        )
         logger.error(error_msg)
         raise ValueError(error_msg)
 
@@ -135,7 +137,7 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
         "part2_mb": round(p2_bytes / (1024 * 1024), 2),
         "total_rows": total_rows,
         "total_bytes": total_bytes,
-        "total_mb": round(total_bytes / (1024 * 1024), 2)
+        "total_mb": round(total_bytes / (1024 * 1024), 2),
     }
 
     # 2. Schema Evolution
@@ -146,7 +148,7 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
         "part2_column_count": df_p2.shape[1],
         "new_columns_in_part2": [c for c in df_p2.columns if c not in df_p1.columns],
         "part1_data_types": {c: str(t) for c, t in df_p1.dtypes.items()},
-        "part2_data_types": {c: str(t) for c, t in df_p2.dtypes.items()}
+        "part2_data_types": {c: str(t) for c, t in df_p2.dtypes.items()},
     }
 
     # 3. Duplicate Rate
@@ -161,7 +163,7 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
         "part2_full_duplicates": dup_full_p2,
         "part2_dup_rate_pct": round((dup_full_p2 / len(df_p2)) * 100, 2) if len(df_p2) > 0 else 0,
         "total_key_duplicates": dup_key_total,
-        "total_key_dup_rate_pct": round((dup_key_total / total_rows) * 100, 2) if total_rows > 0 else 0
+        "total_key_dup_rate_pct": round((dup_key_total / total_rows) * 100, 2) if total_rows > 0 else 0,
     }
 
     # 4. High-Cardinality Analysis
@@ -174,36 +176,32 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
             "unique_count": n_unique,
             "non_null_count": n_non_null,
             "cardinality_ratio": ratio,
-            "is_high_cardinality": ratio > 0.1
+            "is_high_cardinality": ratio > 0.1,
         }
 
     # 5. Skew Analysis
     skew_metrics = {}
     ev_counts = df_combined["event_type"].value_counts()
     skew_metrics["event_type"] = {
-        k: {"count": int(v), "pct": round((v / total_rows) * 100, 2)}
-        for k, v in ev_counts.items()
+        k: {"count": int(v), "pct": round((v / total_rows) * 100, 2)} for k, v in ev_counts.items()
     }
 
     if "category_code" in df_combined.columns:
         cat_counts = df_combined["category_code"].value_counts(dropna=False).head(5)
         skew_metrics["top_categories"] = {
-            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)}
-            for k, v in cat_counts.items()
+            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)} for k, v in cat_counts.items()
         }
 
     if "brand" in df_combined.columns:
         brand_counts = df_combined["brand"].value_counts(dropna=False).head(5)
         skew_metrics["top_brands"] = {
-            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)}
-            for k, v in brand_counts.items()
+            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)} for k, v in brand_counts.items()
         }
 
     if "user_id" in df_combined.columns:
         user_counts = df_combined["user_id"].value_counts().head(5)
         skew_metrics["top_users"] = {
-            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)}
-            for k, v in user_counts.items()
+            str(k): {"count": int(v), "pct": round((v / total_rows) * 100, 2)} for k, v in user_counts.items()
         }
 
     git_commit = get_git_commit()
@@ -215,13 +213,13 @@ def profile_dataset(df_p1: pd.DataFrame, df_p2: pd.DataFrame, p1_bytes: int, p2_
         "source_dataset": "REES46 eCommerce Behavior Data (2019-Oct.csv)",
         "date_ranges": {
             "part1": "2019-10-01 den 2019-10-15 (Schema 9 cot)",
-            "part2": "2019-10-16 den 2019-10-25 (Schema 10 cot, co discount_percent)"
+            "part2": "2019-10-16 den 2019-10-25 (Schema 10 cot, co discount_percent)",
         },
         "volume": volume_metrics,
         "schema_evolution": schema_metrics,
         "duplicate_rate": duplicate_metrics,
         "cardinality": cardinality_metrics,
-        "skew": skew_metrics
+        "skew": skew_metrics,
     }
     return report
 
@@ -285,36 +283,44 @@ def generate_markdown_report(profile: dict, output_path: str):
     for ev, stat in skew.get("event_type", {}).items():
         lines.append(f"- **`{ev}`**: {stat['count']:,} luot ({stat['pct']:.2f}%)")
 
-    lines.extend([
-        "",
-        "### B. Top nganh hang (category_code):",
-    ])
+    lines.extend(
+        [
+            "",
+            "### B. Top nganh hang (category_code):",
+        ]
+    )
     for cat, stat in skew.get("top_categories", {}).items():
         lines.append(f"- **`{cat}`**: {stat['count']:,} luot ({stat['pct']:.2f}%)")
 
-    lines.extend([
-        "",
-        "### C. Top thuong hieu (brand):",
-    ])
+    lines.extend(
+        [
+            "",
+            "### C. Top thuong hieu (brand):",
+        ]
+    )
     for br, stat in skew.get("top_brands", {}).items():
         lines.append(f"- **`{br}`**: {stat['count']:,} luot ({stat['pct']:.2f}%)")
 
-    lines.extend([
-        "",
-        "### D. Top nguoi dung hoat dong (user_id):",
-    ])
+    lines.extend(
+        [
+            "",
+            "### D. Top nguoi dung hoat dong (user_id):",
+        ]
+    )
     for uid, stat in skew.get("top_users", {}).items():
         lines.append(f"- **`{uid}`**: {stat['count']:,} luot ({stat['pct']:.2f}%)")
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 5. Phan Tich Luc Luong Cao (High-Cardinality Analysis)",
-        "",
-        "| Cot (Column) | So Gia Tri Khong Rong | So Gia Tri Duy Nhat (Unique) | Ty Le Cardinality (Unique/Total) | Phan Loai |",
-        "| :--- | :--- | :--- | :--- | :--- |",
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 5. Phan Tich Luc Luong Cao (High-Cardinality Analysis)",
+            "",
+            "| Cot (Column) | So Gia Tri Khong Rong | So Gia Tri Duy Nhat (Unique) | Ty Le Cardinality (Unique/Total) | Phan Loai |",
+            "| :--- | :--- | :--- | :--- | :--- |",
+        ]
+    )
 
     for col, stat in card.items():
         classification = "High Cardinality" if stat["is_high_cardinality"] else "Low/Medium Cardinality"

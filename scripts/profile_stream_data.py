@@ -110,7 +110,7 @@ def main():
         f"| **He so tang dot bien** | x{burst_cfg.get('multiplier', 10)} | Tang dot bien throughput |",
         f"| **Thoi luong burst** | {burst_cfg.get('duration_seconds', 600)} giay | Chu ky flash sale |",
         f"| **So su kien trong pha burst** | {burst_events:,} messages | - |",
-        ""
+        "",
     ]
 
     out_md = "docs/evidence/stream_profile.md"

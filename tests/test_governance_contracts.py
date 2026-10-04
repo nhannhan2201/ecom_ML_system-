@@ -135,9 +135,7 @@ def test_gold_feast_schema_contract_pure():
     assert res_valid.observed == 0.0
 
     # Missing column
-    missing_col_df = pd.DataFrame(
-        {"user_id": [1], "event_timestamp": [pd.Timestamp("2019-10-25")]}
-    )
+    missing_col_df = pd.DataFrame({"user_id": [1], "event_timestamp": [pd.Timestamp("2019-10-25")]})
     res_missing = check_gold_feast_schema(missing_col_df)
     assert res_missing.passed is False
 

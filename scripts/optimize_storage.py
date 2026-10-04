@@ -125,7 +125,9 @@ def benchmark_storage(demo_vacuum: bool = False):
 
     # 3. VACUUM
     if demo_vacuum:
-        print("\nCANH BAO: Che do --demo-vacuum dang xoa file cu ngay lap tuc (RETAIN 0). Luu y: thao tac nay lam mat Delta Time Travel!")
+        print(
+            "\nCANH BAO: Che do --demo-vacuum dang xoa file cu ngay lap tuc (RETAIN 0). Luu y: thao tac nay lam mat Delta Time Travel!"
+        )
         spark.conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
         spark.sql(f"VACUUM delta.`{gold_fact_path}` RETAIN 0 HOURS")
         spark.sql(f"VACUUM delta.`{gold_feat_path}` RETAIN 0 HOURS")
@@ -184,7 +186,7 @@ def benchmark_storage(demo_vacuum: bool = False):
         f"{'5. Thoi gian query user_id':<32} | {f'{time_q_before:.3f}s':<22} | {f'{time_q_after:.3f}s ({speedup:.1f}x)':<22}",
         f"{'6. Thoi gian chay OPTIMIZE':<32} | {'-':<22} | {f'{opt_duration:.2f}s':<22}",
         f"{'7. Che do VACUUM':<32} | {'-':<22} | {f'{vac_str}':<22}",
-        "================================================================================"
+        "================================================================================",
     ]
 
     report_text = "\n".join(report_lines)
@@ -201,7 +203,9 @@ def benchmark_storage(demo_vacuum: bool = False):
 
 def main():
     parser = argparse.ArgumentParser(description="Lakehouse Storage Optimization Benchmark")
-    parser.add_argument("--demo-vacuum", action="store_true", help="Chay VACUUM RETAIN 0 cho demo (lam mat Time Travel)")
+    parser.add_argument(
+        "--demo-vacuum", action="store_true", help="Chay VACUUM RETAIN 0 cho demo (lam mat Time Travel)"
+    )
     args = parser.parse_args()
     benchmark_storage(demo_vacuum=args.demo_vacuum)
 

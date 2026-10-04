@@ -1,10 +1,8 @@
-"""
-Materialize 30-day batch features from MinIO Lakehouse Gold to Redis Online Store.
-Rubric 4.4: Airflow Incremental Materialize Pipeline & Feast Online Store Sync.
+"""Materialize 30-day batch features from MinIO Lakehouse Gold to Redis Online Store.
 
-Hỗ trợ 2 chế độ:
-  1. Range / Backfill (Mặc định): Nạp một khoảng thời gian cụ thể (mặc định: 2019-10-01 -> 2019-10-26).
-  2. Incremental (Tự động tăng dần): Tự động tìm checkpoint lần sync trước và đồng bộ delta mới đến mốc end_date.
+Supports two execution modes:
+  1. Range / Backfill: Loads features across an explicit timestamp window.
+  2. Incremental: Automatically uses Feast checkpoint state to sync delta features.
 """
 
 import os
@@ -35,6 +33,7 @@ os.environ["S3_ENDPOINT_URL"] = MINIO_ENDPOINT
 from feast import FeatureStore
 import redis
 
+
 def parse_datetime(dt_str: str, is_end_of_day: bool = False) -> datetime:
     """Parse chuoi ngay (YYYY-MM-DD hoac ISO8601) ve datetime UTC."""
     try:
@@ -54,9 +53,10 @@ def parse_datetime(dt_str: str, is_end_of_day: bool = False) -> datetime:
         return dt.replace(hour=0, minute=0, second=0)
     return dt
 
+
 def run_materialization(mode: str = "range", start_str: str = None, end_str: str = None, views: list = None):
     """Synchronize offline features from MinIO Lakehouse Gold to the Redis online store.
-    
+
     Args:
         mode: Synchronization mode ('range' for backfill or 'incremental' for delta updates).
         start_str: Beginning timestamp string (YYYY-MM-DD or ISO8601).
@@ -103,23 +103,22 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
         print(f"[INFO] Thuc thi MATERIALIZE INCREMENTAL den moc: {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         print("[INFO] Feast tu dong truy vet checkpoint lan truoc trong registry.db va chi nap delta moi.")
 
-        store.materialize_incremental(
-            end_date=end_date,
-            feature_views=views
-        )
+        store.materialize_incremental(end_date=end_date, feature_views=views)
     else:
         # CHE DO RANGE / BACKFILL: Nap dai ngay chi dinh
         start_date = parse_datetime(start_str) if start_str else datetime(2019, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
-        end_date = parse_datetime(end_str, is_end_of_day=True) if end_str else datetime(2019, 10, 26, 23, 59, 59, tzinfo=timezone.utc)
+        end_date = (
+            parse_datetime(end_str, is_end_of_day=True)
+            if end_str
+            else datetime(2019, 10, 26, 23, 59, 59, tzinfo=timezone.utc)
+        )
 
-        print(f"[INFO] Khoang thoi gian nap: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')} -> {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
+        print(
+            f"[INFO] Khoang thoi gian nap: {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')} -> {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}"
+        )
         print("[INFO] Dang doc Parquet tu MinIO va nap len Redis...")
 
-        store.materialize(
-            start_date=start_date,
-            end_date=end_date,
-            feature_views=views
-        )
+        store.materialize(start_date=start_date, end_date=end_date, feature_views=views)
 
     duration = time.time() - start_time
     print("-" * 80)
@@ -148,6 +147,7 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
         print("  - Trang thai                       : DA NAP THANH CONG TAI REDIS ONLINE STORE")
     print("=" * 80)
 
+
 def main():
     """Command-line entry point to run Feast materialization."""
     parser = argparse.ArgumentParser(description="Feast Materialization Pipeline to Redis Online Store")
@@ -155,34 +155,30 @@ def main():
         "--mode",
         choices=["range", "incremental"],
         default="range",
-        help="Chế độ nạp: 'range' (Backfill dải ngày) hoặc 'incremental' (Tự động tăng dần theo checkpoint)"
+        help="Chế độ nạp: 'range' (Backfill dải ngày) hoặc 'incremental' (Tự động tăng dần theo checkpoint)",
     )
     parser.add_argument(
         "--start-date",
         type=str,
         default=None,
-        help="Ngày bắt đầu (YYYY-MM-DD hoặc ISO). Mặc định cho mode range: 2019-10-01"
+        help="Ngày bắt đầu (YYYY-MM-DD hoặc ISO). Mặc định cho mode range: 2019-10-01",
     )
     parser.add_argument(
         "--end-date",
         type=str,
         default=None,
-        help="Ngày kết thúc (YYYY-MM-DD hoặc ISO). Mặc định: 2019-10-26 (range) hoặc now() (incremental)"
+        help="Ngày kết thúc (YYYY-MM-DD hoặc ISO). Mặc định: 2019-10-26 (range) hoặc now() (incremental)",
     )
     parser.add_argument(
         "--views",
         nargs="+",
         default=["user_batch_features_30d"],
-        help="Danh sách Feature Views cần nạp (mặc định: user_batch_features_30d)"
+        help="Danh sách Feature Views cần nạp (mặc định: user_batch_features_30d)",
     )
 
     args = parser.parse_args()
-    run_materialization(
-        mode=args.mode,
-        start_str=args.start_date,
-        end_str=args.end_date,
-        views=args.views
-    )
+    run_materialization(mode=args.mode, start_str=args.start_date, end_str=args.end_date, views=args.views)
+
 
 if __name__ == "__main__":
     main()

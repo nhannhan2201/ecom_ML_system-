@@ -44,6 +44,7 @@ PROJECT_ROOT = Variable.get("project_root", default_var="/opt/airflow/ecom_proje
 RAW_BASE_PATH = Variable.get("raw_base_path", default_var="s3a://ecommerce-raw/batch")
 LAKEHOUSE_PATH = Variable.get("lakehouse_bucket_path", default_var="s3a://ecommerce-lakehouse")
 
+
 def _get_minio_connection():
     """Lấy cấu hình kết nối MinIO tập trung từ Airflow Connection 'minio_s3_conn'."""
     try:
@@ -57,6 +58,7 @@ def _get_minio_connection():
         access_key = Variable.get("aws_access_key_id", default_var=os.environ.get("AWS_ACCESS_KEY_ID", ""))
         secret_key = Variable.get("aws_secret_access_key", default_var=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
         return endpoint, access_key, secret_key
+
 
 def _get_postgres_connection():
     """Lấy cấu hình kết nối PostgreSQL DWH tập trung từ Airflow Connection 'postgres_dwh'."""
@@ -74,8 +76,9 @@ def _get_postgres_connection():
             os.getenv("POSTGRES_PORT", "5432"),
             os.getenv("POSTGRES_DB", "ecom_dwh"),
             os.getenv("POSTGRES_USER", ""),
-            os.getenv("POSTGRES_PASSWORD", "")
+            os.getenv("POSTGRES_PASSWORD", ""),
         )
+
 
 MINIO_ENDPOINT, AWS_ACCESS_KEY, AWS_SECRET_KEY = _get_minio_connection()
 PG_HOST, PG_PORT, PG_DB, PG_USER, PG_PASSWORD = _get_postgres_connection()
@@ -123,7 +126,6 @@ with DAG(
     catchup=False,
     tags=["lakehouse", "silver", "gold", "dwh", "dp2", "ingest", "validate", "spark"],
 ) as dag:
-
     # 1. INGEST STAGE
     ingest_stage = BashOperator(
         task_id="ingest_stage",

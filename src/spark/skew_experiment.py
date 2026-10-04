@@ -54,8 +54,7 @@ def create_spark_session(minio_endpoint: str = None) -> SparkSession:
     secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or "minioadmin"
 
     spark = (
-        SparkSession.builder
-        .appName("SparkSkewExperiment")
+        SparkSession.builder.appName("SparkSkewExperiment")
         .master("local[*]")
         .config("spark.driver.memory", "2g")
         .config("spark.executor.memory", "2g")
@@ -128,7 +127,6 @@ def main():
     app_id = spark.sparkContext.applicationId
 
     # Load dataset
-    minio_endpoint = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
     lakehouse_path = "s3a://ecommerce-lakehouse"
     silver_path = f"{lakehouse_path}/silver/stg_events"
 
@@ -147,8 +145,7 @@ def main():
 
     # Cast columns and prepare skewed data
     df_clean = (
-        df_source
-        .withColumn("user_id", F.col("user_id").cast("long"))
+        df_source.withColumn("user_id", F.col("user_id").cast("long"))
         .withColumn("price", F.col("price").cast("double"))
         .select("user_id", "event_type", "price")
         .filter(F.col("user_id").isNotNull())
@@ -158,8 +155,10 @@ def main():
     hot_keys = [999999999, 888888888, 777777777]
     df_skewed = df_clean.withColumn(
         "user_id",
-        F.when(F.rand(seed=42) < 0.35, F.element_at(F.array([F.lit(k) for k in hot_keys]), F.floor(F.rand() * 3 + 1).cast("int")))
-        .otherwise(F.col("user_id"))
+        F.when(
+            F.rand(seed=42) < 0.35,
+            F.element_at(F.array([F.lit(k) for k in hot_keys]), F.floor(F.rand() * 3 + 1).cast("int")),
+        ).otherwise(F.col("user_id")),
     ).cache()
     total_rows = df_skewed.count()
     logger.info(f"Cached skewed experiment dataset: {total_rows:,} rows.")
@@ -187,10 +186,7 @@ def main():
     query_a = (
         df_skewed.join(dim_user, on="user_id", how="inner")
         .groupBy("user_id")
-        .agg(
-            F.count("event_type").alias("event_count"),
-            F.round(F.sum("price"), 2).alias("total_spend")
-        )
+        .agg(F.count("event_type").alias("event_count"), F.round(F.sum("price"), 2).alias("total_spend"))
     )
     result_a_count = query_a.count()
     duration_a = time.time() - t0_a
@@ -199,19 +195,22 @@ def main():
     # Fetch stage metric for Baseline
     time.sleep(1)
     tracker = spark.sparkContext.statusTracker()
-    stage_ids = tracker.getActiveStageIds() or []
-    all_stage_ids = tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    all_stage_ids = (
+        tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    )
     last_stage_a = all_stage_ids[-1] if all_stage_ids else 0
     metrics_a = fetch_stage_metrics(app_id, last_stage_a)
 
-    experiment_results.append({
-        "variant": "Variant A (Baseline)",
-        "aqe_enabled": False,
-        "technique": "Sort-Merge Join (No AQE, No Salting)",
-        "duration_seconds": round(duration_a, 3),
-        "aggregated_rows": result_a_count,
-        "metrics": metrics_a
-    })
+    experiment_results.append(
+        {
+            "variant": "Variant A (Baseline)",
+            "aqe_enabled": False,
+            "technique": "Sort-Merge Join (No AQE, No Salting)",
+            "duration_seconds": round(duration_a, 3),
+            "aggregated_rows": result_a_count,
+            "metrics": metrics_a,
+        }
+    )
 
     # =========================================================================
     # VARIANT B: AQE SKEW JOIN (Adaptive Query Execution Enabled)
@@ -229,28 +228,29 @@ def main():
     query_b = (
         df_skewed.join(dim_user, on="user_id", how="inner")
         .groupBy("user_id")
-        .agg(
-            F.count("event_type").alias("event_count"),
-            F.round(F.sum("price"), 2).alias("total_spend")
-        )
+        .agg(F.count("event_type").alias("event_count"), F.round(F.sum("price"), 2).alias("total_spend"))
     )
     result_b_count = query_b.count()
     duration_b = time.time() - t0_b
     logger.info(f"Variant B finished: {result_b_count:,} aggregated rows in {duration_b:.3f}s")
 
     time.sleep(1)
-    all_stage_ids_b = tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    all_stage_ids_b = (
+        tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    )
     last_stage_b = all_stage_ids_b[-1] if all_stage_ids_b else 0
     metrics_b = fetch_stage_metrics(app_id, last_stage_b)
 
-    experiment_results.append({
-        "variant": "Variant B (AQE Skew Join)",
-        "aqe_enabled": True,
-        "technique": "AQE Skew Join (Dynamic Partition Splitting)",
-        "duration_seconds": round(duration_b, 3),
-        "aggregated_rows": result_b_count,
-        "metrics": metrics_b
-    })
+    experiment_results.append(
+        {
+            "variant": "Variant B (AQE Skew Join)",
+            "aqe_enabled": True,
+            "technique": "AQE Skew Join (Dynamic Partition Splitting)",
+            "duration_seconds": round(duration_b, 3),
+            "aggregated_rows": result_b_count,
+            "metrics": metrics_b,
+        }
+    )
 
     # =========================================================================
     # VARIANT C: TWO-STAGE SALTING (Key Replication & Aggregation)
@@ -264,50 +264,50 @@ def main():
     num_salts = 4
 
     # 1. Salt skewed table
-    df_salted = df_skewed.withColumn("salt", F.floor(F.rand(seed=42) * num_salts)) \
-        .withColumn("user_id_salted", F.concat_ws("_", F.col("user_id"), F.col("salt")))
+    df_salted = df_skewed.withColumn("salt", F.floor(F.rand(seed=42) * num_salts)).withColumn(
+        "user_id_salted", F.concat_ws("_", F.col("user_id"), F.col("salt"))
+    )
 
     # 2. Replicate dimension table across all salt values
-    dim_salted = dim_user.withColumn("salt_array", F.array([F.lit(i) for i in range(num_salts)])) \
-        .withColumn("salt", F.explode("salt_array")) \
-        .withColumn("user_id_salted", F.concat_ws("_", F.col("user_id"), F.col("salt"))) \
+    dim_salted = (
+        dim_user.withColumn("salt_array", F.array([F.lit(i) for i in range(num_salts)]))
+        .withColumn("salt", F.explode("salt_array"))
+        .withColumn("user_id_salted", F.concat_ws("_", F.col("user_id"), F.col("salt")))
         .select("user_id_salted", "user_tier")
+    )
 
     # 3. Stage 1: Partial aggregate on salted key
     partial_agg = (
         df_salted.join(dim_salted, on="user_id_salted", how="inner")
         .groupBy("user_id", "salt")
-        .agg(
-            F.count("event_type").alias("partial_count"),
-            F.sum("price").alias("partial_spend")
-        )
+        .agg(F.count("event_type").alias("partial_count"), F.sum("price").alias("partial_spend"))
     )
 
     # 4. Stage 2: Final aggregate on original user_id
-    query_c = (
-        partial_agg.groupBy("user_id")
-        .agg(
-            F.sum("partial_count").alias("event_count"),
-            F.round(F.sum("partial_spend"), 2).alias("total_spend")
-        )
+    query_c = partial_agg.groupBy("user_id").agg(
+        F.sum("partial_count").alias("event_count"), F.round(F.sum("partial_spend"), 2).alias("total_spend")
     )
     result_c_count = query_c.count()
     duration_c = time.time() - t0_c
     logger.info(f"Variant C finished: {result_c_count:,} aggregated rows in {duration_c:.3f}s")
 
     time.sleep(1)
-    all_stage_ids_c = tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    all_stage_ids_c = (
+        tracker.getJobInfo(tracker.getJobIdsForGroup(None)[-1]).stageIds if tracker.getJobIdsForGroup(None) else []
+    )
     last_stage_c = all_stage_ids_c[-1] if all_stage_ids_c else 0
     metrics_c = fetch_stage_metrics(app_id, last_stage_c)
 
-    experiment_results.append({
-        "variant": "Variant C (Two-Stage Salting)",
-        "aqe_enabled": False,
-        "technique": f"Two-Stage Salting ({num_salts} salts)",
-        "duration_seconds": round(duration_c, 3),
-        "aggregated_rows": result_c_count,
-        "metrics": metrics_c
-    })
+    experiment_results.append(
+        {
+            "variant": "Variant C (Two-Stage Salting)",
+            "aqe_enabled": False,
+            "technique": f"Two-Stage Salting ({num_salts} salts)",
+            "duration_seconds": round(duration_c, 3),
+            "aggregated_rows": result_c_count,
+            "metrics": metrics_c,
+        }
+    )
 
     # Verification of result equality
     assert result_a_count == result_b_count == result_c_count, "Integrity Error: Row counts differ across variants!"
@@ -324,7 +324,7 @@ def main():
         "hot_keys": hot_keys,
         "hot_ratio": 0.35,
         "shuffle_partitions": 8,
-        "results": experiment_results
+        "results": experiment_results,
     }
 
     out_json = "docs/evidence/spark_skew_experiment.json"
@@ -347,7 +347,7 @@ def main():
         "## 1. Bang So Sanh Hieu Nang 3 Bien The (Empirical Comparison)",
         "",
         "| Bien The | Ky Thuat Ap Dung | Thoi Gian Tong (s) | Max Task Duration | Min Shuffle Read | Max Shuffle Read | Disk Spill |",
-        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |"
+        "| :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
     for item in experiment_results:
@@ -357,34 +357,36 @@ def main():
             f"{m['task_duration_max']:.3f}s | {m['shuffle_read_bytes_min']:,} B | {m['shuffle_read_bytes_max']:,} B | {m['disk_bytes_spilled']} B |"
         )
 
-    lines.extend([
-        "",
-        "---",
-        "",
-        "## 2. Phan Tich Chuyen Sau ve Tung Bien The",
-        "",
-        "### A. Bien The A: Baseline (Sort-Merge Join khong AQE, khong Salting)",
-        "- **Dac diem**: Tat ca cac dong co cung `user_id` hot key deu bi hash vao cung 1 shuffle partition duy nhat.",
-        "- **Hien tuong**: Task nhan hot partition phai xu ly khoi luong lon hon nhieu so voi cac task con lai (Straggler Task).",
-        "",
-        "### B. Bien The B: AQE Skew Join (Adaptive Query Execution)",
-        "- **Dac diem**: Khi bat `spark.sql.adaptive.skewJoin.enabled = true`, Spark Runtime theo doi kich thuoc partition sau shuffle map stage.",
-        "- **Co che**: Neu partition vuot qua `skewedPartitionThresholdInBytes` va lon gap `skewedPartitionFactor` lan so voi trung vi, Spark se tu dong chia partition lech thanh nhieu sub-partitions nho va gop song song.",
-        f"- **Luu y thuc nghiem**: Tren dataset cuc bo ({total_rows:,} dong), nguong duoc ha xuong `64KB` de phu hop kich thuoc du lieu; tren dataset lon (medium/full), nguong mac dinh `16MB` se phat huy hieu qua ro ret hon.",
-        "",
-        "### C. Bien The C: Two-Stage Salting (Ky Thuat Muoi Hoa 2 Giai Doan)",
-        "- **Dac diem**: Them salt ngau nhien tu `0` den `3` vao bang lech, dong thoi nhan ban bang chieu `dim_user` len `4` lan.",
-        "- **Giai doan 1**: Join tren khoa muoi hoa `user_id_salt`, phan bo deu hot key tren 4 partition khac nhau va tong hop so bo.",
-        "- **Giai doan 2**: Gom cac ket qua so bo ve `user_id` goc de tinh tong cuoi cung.",
-        "- **Ket luan**: Triet tieu hoan toan partition straggler, giup task duration giua cac task can bang hon.",
-        "",
-        "---",
-        "",
-        "## 3. Han Che va Huong Mo Rong",
-        "",
-        "- Du lieu cuc bo (dev sample) co kich thuoc nho (~1M dong) nen su chenh lech thoi gian tuyet doi giua cac bien the nam trong khoang vai tram mili-giay den 1-2 giay.",
-        "- De quan sat ro su chenh lech (spill to disk, straggler keo dai phut), sinh vien co the chay tren bo du lieu medium (~5GB) bang lenh: `make gen-data-medium && make spark-skew`."
-    ])
+    lines.extend(
+        [
+            "",
+            "---",
+            "",
+            "## 2. Phan Tich Chuyen Sau ve Tung Bien The",
+            "",
+            "### A. Bien The A: Baseline (Sort-Merge Join khong AQE, khong Salting)",
+            "- **Dac diem**: Tat ca cac dong co cung `user_id` hot key deu bi hash vao cung 1 shuffle partition duy nhat.",
+            "- **Hien tuong**: Task nhan hot partition phai xu ly khoi luong lon hon nhieu so voi cac task con lai (Straggler Task).",
+            "",
+            "### B. Bien The B: AQE Skew Join (Adaptive Query Execution)",
+            "- **Dac diem**: Khi bat `spark.sql.adaptive.skewJoin.enabled = true`, Spark Runtime theo doi kich thuoc partition sau shuffle map stage.",
+            "- **Co che**: Neu partition vuot qua `skewedPartitionThresholdInBytes` va lon gap `skewedPartitionFactor` lan so voi trung vi, Spark se tu dong chia partition lech thanh nhieu sub-partitions nho va gop song song.",
+            f"- **Luu y thuc nghiem**: Tren dataset cuc bo ({total_rows:,} dong), nguong duoc ha xuong `64KB` de phu hop kich thuoc du lieu; tren dataset lon (medium/full), nguong mac dinh `16MB` se phat huy hieu qua ro ret hon.",
+            "",
+            "### C. Bien The C: Two-Stage Salting (Ky Thuat Muoi Hoa 2 Giai Doan)",
+            "- **Dac diem**: Them salt ngau nhien tu `0` den `3` vao bang lech, dong thoi nhan ban bang chieu `dim_user` len `4` lan.",
+            "- **Giai doan 1**: Join tren khoa muoi hoa `user_id_salt`, phan bo deu hot key tren 4 partition khac nhau va tong hop so bo.",
+            "- **Giai doan 2**: Gom cac ket qua so bo ve `user_id` goc de tinh tong cuoi cung.",
+            "- **Ket luan**: Triet tieu hoan toan partition straggler, giup task duration giua cac task can bang hon.",
+            "",
+            "---",
+            "",
+            "## 3. Han Che va Huong Mo Rong",
+            "",
+            "- Du lieu cuc bo (dev sample) co kich thuoc nho (~1M dong) nen su chenh lech thoi gian tuyet doi giua cac bien the nam trong khoang vai tram mili-giay den 1-2 giay.",
+            "- De quan sat ro su chenh lech (spill to disk, straggler keo dai phut), sinh vien co the chay tren bo du lieu medium (~5GB) bang lenh: `make gen-data-medium && make spark-skew`.",
+        ]
+    )
 
     out_md = "docs/evidence/spark_skew_experiment.md"
     with open(out_md, "w", encoding="utf-8") as f:

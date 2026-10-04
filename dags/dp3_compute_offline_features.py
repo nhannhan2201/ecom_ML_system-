@@ -45,6 +45,7 @@ RAW_BASE_PATH = Variable.get("raw_base_path", default_var="s3a://ecommerce-raw/b
 LAKEHOUSE_PATH = Variable.get("lakehouse_bucket_path", default_var="s3a://ecommerce-lakehouse")
 PREDICTION_DATE = Variable.get("prediction_date", default_var="2019-10-26")
 
+
 def _get_minio_connection():
     """Lấy cấu hình kết nối MinIO tập trung từ Airflow Connection 'minio_s3_conn'."""
     try:
@@ -58,6 +59,7 @@ def _get_minio_connection():
         access_key = Variable.get("aws_access_key_id", default_var=os.environ.get("AWS_ACCESS_KEY_ID", ""))
         secret_key = Variable.get("aws_secret_access_key", default_var=os.environ.get("AWS_SECRET_ACCESS_KEY", ""))
         return endpoint, access_key, secret_key
+
 
 MINIO_ENDPOINT, AWS_ACCESS_KEY, AWS_SECRET_KEY = _get_minio_connection()
 
@@ -94,7 +96,6 @@ with DAG(
     catchup=False,
     tags=["lakehouse", "features", "feast", "dp3", "ingest", "validate", "spark"],
 ) as dag:
-
     # 1. INGEST STAGE
     ingest_stage = BashOperator(
         task_id="ingest_stage",
