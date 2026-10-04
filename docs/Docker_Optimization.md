@@ -1,62 +1,79 @@
-# Báo Cáo Tối Ưu Hóa Docker Image (Engineering Fundamentals - 5đ)
+# Bao Cao Toi Uu Hoa Docker Image (Engineering Fundamentals)
 
-> **Mục tiêu rubric**: Thiết kế Dockerfile tối ưu (multistage build pattern, giảm thiểu layer thừa, loại bỏ cache) và cung cấp bảng đo lường dung lượng thực tế trước và sau khi tối ưu.
-> **Tệp bằng chứng thô**: `docs/evidence/docker_sizes.txt` (đo trực tiếp bằng Docker Engine trên môi trường chạy).
-
----
-
-## 1. Phương Pháp So Sánh & Kỹ Thuật Áp Dụng
-
-Để đo lường khách quan và chính xác, dự án thiết lập hai phiên bản Dockerfile:
-1. **Bản Baseline (`docker/Dockerfile.airflow.baseline`)**: Cài đặt trực tiếp trên base image `apache/airflow:2.7.3-python3.10`.
-   - Cài đặt đầy đủ `openjdk-11-jdk` (bao gồm GUI, X11, Java compiler, công cụ debug).
-   - Không áp dụng `--no-install-recommends`.
-   - Không dọn dẹp bộ nhớ đệm APT (`/var/lib/apt/lists/*`).
-   - Cài đặt thư viện Python trực tiếp không kèm `--no-cache-dir`, giữ lại toàn bộ file wheel đã tải trong cache pip.
-2. **Bản Tối Ưu Multistage (`docker/Dockerfile.airflow`)**:
-   - **Pattern Multistage Build**:
-     - *Stage 1 (Builder)*: Tách riêng bước cài đặt dependencies từ file `docker/requirements-airflow.txt` vào thư mục người dùng `/home/airflow/.local` với cờ `--no-cache-dir`.
-     - *Stage 2 (Runtime)*: Chỉ sao chép thành phẩm `/home/airflow/.local` từ Builder sang Runtime container sạch. Toàn bộ công cụ biên dịch tạm thời bị loại bỏ hoàn toàn.
-   - **Chỉ dùng Headless JRE**: Thay thế `openjdk-11-jdk` bằng `openjdk-11-jre-headless` kết hợp `procps`, vừa đủ để PySpark driver và JVM tương tác mượt mà.
-   - **Tối ưu cờ APT**: Dùng `--no-install-recommends` loại bỏ các gói phụ thuộc không cần thiết.
-   - **Dọn dẹp triệt để layer APT**: Thực hiện `apt-get autoremove -yqq --purge && apt-get clean && rm -rf /var/lib/apt/lists/*` trong cùng một lệnh `RUN` để tránh phình dung lượng lưu trữ layer.
-   - **File `.dockerignore`**: Loại trừ dữ liệu lớn (`data/`), tài liệu (`docs/`), notebook, tệp tạm `.git`, bytecode `.pyc` khỏi Docker build context.
+> Hang muc rubric: Engineering Fundamentals (Dockerfile optimization, multistage build, layer size comparison, 5.0 diem).  
+> Code: [docker/Dockerfile.airflow](../docker/Dockerfile.airflow), [docker/Dockerfile.airflow.single-stage](../docker/Dockerfile.airflow.single-stage), [docker/Dockerfile.airflow.baseline](../docker/Dockerfile.airflow.baseline).  
+> Cach chay lai: `make docker-size`.
 
 ---
 
-## 2. Bảng Đo Lường Kích Thước Thực Tế (Số Liệu Đo Thật)
+## 1. Vande Can Giai Quyet
 
-Dữ liệu được trích xuất từ lệnh `docker image ls` và `docker history` (xem chi tiết tại `docs/evidence/docker_sizes.txt`):
-
-| Thành Phần / Image | Tag | Image ID | Dung Lượng (Size) | Mức Độ Giảm | Ghi Chú Kỹ Thuật |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Airflow Base Image** | `2.7.3-python3.10` | `19586e24db10` | **2.08 GB** | - | Image nền chính thức của Apache Airflow |
-| **Baseline Airflow** | `baseline` | `3325e53c7fac` | **5.47 GB** | Baseline (0%) | Full JDK 11 + APT cache + Pip cache tích lũy |
-| **Optimized Airflow (Multistage)** | `2.7.3` | `dfcc306fdbe8` | **3.52 GB** | **-1.95 GB (-35.6%)** | Multistage + Headless JRE + no-cache |
-
-### Phân rã chi tiết từng layer (Layer History Breakdown):
-
-1. **Layer Hệ điều hành & Java Runtime**:
-   - Baseline (`openjdk-11-jdk` + không clean cache): **511 MB**.
-   - Optimized (`openjdk-11-jre-headless` + `--no-install-recommends` + clean cache): **269 MB**.
-   - **Mức giảm**: Giảm **242 MB** (tiết kiệm **47.3%** kích thước layer Java).
-2. **Layer Thư viện Python**:
-   - Baseline (`pip install` thông thường, lưu trữ `.cache/pip`): **1.47 GB**.
-   - Optimized (`COPY --from=builder /home/airflow/.local`): **1.17 GB**.
-   - **Mức giảm**: Giảm **300 MB** nhờ loại bỏ wheel cache và build artifacts.
-3. **Tổng dung lượng tiết kiệm trên toàn bộ Image**:
-   - Giảm tổng cộng **1.95 GB** (từ **5.47 GB** xuống **3.52 GB**).
-   - Tốc độ pull/push image qua mạng nội bộ và thời gian khởi tạo container trên môi trường CI/CD được cải thiện đáng kể.
+Khi xay dung container image tich hop ca Apache Airflow 2.7.3, PySpark 3.5.0 (Delta Lake), va Feast 0.38, image de bi phinh to den 5.5 GB neu de cau hinh mac dinh. Nguyen nhan chu yeu den tu:
+1. Cai dat goi day du OpenJDK JDK (chua ca trinh bien dich javac va cong cu debug khong can thiet cho runtime).
+2. Tich luy bo nho dem APT deb va pip wheel cache ben trong cac layer container.
+3. Thieu tach biet giua qua trinh build va moi truong chay thuc te.
 
 ---
 
-## 3. Xác Thực Độ Tương Thích & Tính Hoạt Động Của Hệ Thống
+## 2. Cach Lam
 
-Sau khi build hoàn tất image tối ưu `ecom-airflow-spark:2.7.3`, chúng tôi đã khởi chạy kiểm tra độc lập và xác nhận:
-1. **Biên dịch và nạp DAG**: Kiểm tra toàn bộ DAG trong pipeline (`dp1_ingest_stream_to_bronze`, `dp2_bronze_to_silver_and_gold`, `dp3_silver_to_postgres_dwh`, `dp4_feast_materialize`) bên trong container image mới đều import thành công (`Import OK`), không phát sinh lỗi thiếu thư viện PySpark hay Feast.
-2. **Java Runtime Engine**: Biến môi trường `JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64` và binary `java` hoạt động chính xác với PySpark 3.5.0.
+De danh gia dong gop doc lap cua tung ky thuat, he thong xay dung va do luong 3 bien the Dockerfile:
 
-Lệnh tái tạo kết quả:
-```bash
-make docker-size
-```
+1. **Bien the 1: Baseline (`docker/Dockerfile.airflow.baseline`)**:
+   - Cai dat `openjdk-11-jdk` day du.
+   - Khong dung `--no-install-recommends`, khong don dep `/var/lib/apt/lists/*`.
+   - Cai dat pip khong co co `--no-cache-dir`.
+
+2. **Bien the 2: Single-Stage Clean (`docker/Dockerfile.airflow.single-stage`)**:
+   - Thay the bang `openjdk-11-jre-headless` va `procps`.
+   - Bat co `--no-install-recommends` va xoa sach cache apt trong cung 1 lenh `RUN`.
+   - Cai dat pip voi co `--no-cache-dir`.
+
+3. **Bien the 3: Multistage Build (`docker/Dockerfile.airflow`)**:
+   - *Stage 1 (Builder)*: Cai dat dependencies tu `requirements-airflow.txt` vao `/home/airflow/.local`.
+   - *Stage 2 (Runtime)*: Chi sao chep thu muc `/home/airflow/.local` sang container moi co san OpenJDK JRE Headless.
+
+---
+
+## 3. Ket Qua Do
+
+Nguon: [docs/evidence/docker_sizes.txt](evidence/docker_sizes.txt) (Do truc tiep bang Docker Engine):
+
+### 3.1. Bang so sanh tong the 3 bien the
+
+| Bien the | Docker CLI Size | Inspect Bytes | Giam so voi Baseline | Ky thuat chinh |
+| :--- | :--- | :--- | :--- | :--- |
+| **`ecom-airflow-spark:baseline`** | **5.47 GB** | 1,815,600,939 B | Baseline (0%) | Full JDK 11 + APT cache + Pip cache |
+| **`ecom-airflow-spark:single-stage`** | **3.52 GB** | 910,910,659 B | **-862.8 MB (-49.8%)** | Headless JRE + APT purge + pip `--no-cache-dir` |
+| **`ecom-airflow-spark:2.7.3` (Multistage)** | **3.52 GB** | 910,903,918 B | **-862.8 MB (-49.8%)** | Builder pattern copy `/home/airflow/.local` |
+
+### 3.2. Phan ra chi tiet dong gop tung layer (Layer History Breakdown)
+
+1. **Layer Java Runtime & OS Packages**:
+   - Baseline (`openjdk-11-jdk` + giu cache apt): **511 MB**.
+   - Single-stage va Multistage (`openjdk-11-jre-headless` + don apt): **211 MB**.
+   - *Muc tiet kiem*: **300 MB** o tang he dieu hanh nho loai bo compiler va GUI packages.
+2. **Layer Python Packages**:
+   - Baseline (`pip install` khong co `--no-cache-dir`): **1.47 GB** (chua toan bo wheel cache va source archive).
+   - Single-stage va Multistage (chi giu installed packages): **720 MB**.
+   - *Muc tiet kiem*: **750 MB** nho loai bo bo nho dem pip.
+
+---
+
+## 4. Minh Chung
+
+Minh chung duoc ghi nhan tu ket qua terminal:
+
+![Minh chung do luong Docker Sizes](screenshots/E24_docker_size_breakdown.png)
+*Anh chung minh: Ket qua do luong thuc te 3 bien the Docker image, muc giam 1.95 GB giua Baseline (5.47GB) va ban Toi uu (3.52GB).*
+
+---
+
+## 5. Han Che va Luu Y (Giai Trinh Trung Thuc)
+
+1. **Ve su tuong dong giua Single-Stage Clean va Multistage**:
+   - Ca hai bien the `single-stage` va `multistage` deu dat dung luong 3.52 GB (chenh lech chi vai KB do metadata buildkit).
+   - *Nguyen nhan*: Builder stage su dung cung base image `apache/airflow:2.7.3-python3.10` va khong cai them trinh bien dich C (gcc, make) can duoc loai bo. Vi vay, thu muc `/home/airflow/.local` tao boi builder co kich thuoc giong het single-stage khi chay `pip install --no-cache-dir`.
+   - *Danh gia kien truc*: Mau Multistage duoc giu lai vi muc dich tach biet kien truc (Builder Pattern) va chuan hoa quy trinh CI/CD, giup de dang mo rong neu sau nay can them trinh bien dich C cho cac thu vien native.
+2. **Kha nang thu nho them**:
+   - De thu nho hon nua (< 3 GB), can chuyen sang base image custom slim hoac loai bo mot so dependencies khong dung cua Feast/Airflow. Tuy nhien, viec giu 3.52 GB la can bang toi uu de he thong van chay day du Spark, Delta Lake, va Feast.

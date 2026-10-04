@@ -136,8 +136,8 @@ lint: ## Run code linter with ruff
 	ruff check .
 
 docker-size: ## Compare and display Docker image sizes for Airflow Spark image
-	@echo "--> Inspecting Docker image sizes..."
-	docker image ls --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | grep -E "REPOSITORY|ecom|airflow" || true
+	@echo "--> Inspecting Docker image sizes and layer breakdown..."
+	$(PYTHON_EXEC) scripts/measure_docker_sizes.py
 
 profile-data: ## Profile generated data distributions, skew, duplicates, and schema
 	@echo "--> Profiling generated dataset..."
