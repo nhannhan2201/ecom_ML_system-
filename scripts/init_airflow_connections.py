@@ -19,15 +19,15 @@ def init_connections():
     print("=" * 70)
 
     # Local development credentials (source of truth from environment or dev defaults)
-    minio_access_key = os.getenv("AWS_ACCESS_KEY_ID", os.getenv("MINIO_ROOT_USER", "minioadmin"))
-    minio_secret_key = os.getenv("AWS_SECRET_ACCESS_KEY", os.getenv("MINIO_ROOT_PASSWORD", "minioadmin"))
-    minio_endpoint = os.getenv("MINIO_ENDPOINT", "http://ecom_minio:9000")
+    minio_access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID") or os.getenv("MINIO_ROOT_USER", "minioadmin")
+    minio_secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY") or os.getenv("MINIO_ROOT_PASSWORD", "minioadmin")
+    minio_endpoint = os.getenv("MINIO_INTERNAL_ENDPOINT") or os.getenv("MINIO_ENDPOINT", "http://ecom_minio:9000")
 
-    pg_user = os.getenv("POSTGRES_USER", "postgres")
-    pg_password = os.getenv("POSTGRES_PASSWORD", "postgres")
-    pg_host = os.getenv("POSTGRES_HOST", "ecom_postgres")
-    pg_port = int(os.getenv("POSTGRES_PORT", "5432"))
-    pg_db = os.getenv("POSTGRES_DB", "ecom_dwh")
+    pg_user = os.getenv("POSTGRES_DWH_USER") or os.getenv("POSTGRES_USER", "postgres")
+    pg_password = os.getenv("POSTGRES_DWH_PASSWORD") or os.getenv("POSTGRES_PASSWORD", "postgres")
+    pg_host = os.getenv("POSTGRES_DWH_HOST", "ecom_postgres")
+    pg_port = int(os.getenv("POSTGRES_DWH_PORT", "5432"))
+    pg_db = os.getenv("POSTGRES_DWH_DB") or os.getenv("POSTGRES_DB", "ecom_dwh")
 
     redis_host = os.getenv("REDIS_HOST", "ecom_redis")
     redis_port = int(os.getenv("REDIS_PORT", "6379"))

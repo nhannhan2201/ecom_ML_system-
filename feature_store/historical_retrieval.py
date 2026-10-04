@@ -24,8 +24,15 @@ MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
 if "ecom_minio" in MINIO_ENDPOINT:
     MINIO_ENDPOINT = MINIO_ENDPOINT.replace("ecom_minio", "minio")
 
-os.environ["AWS_ACCESS_KEY_ID"] = "minioadmin"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "minioadmin"
+access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+if not access_key:
+    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+if not secret_key:
+    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
+os.environ["AWS_ACCESS_KEY_ID"] = access_key
+os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
 os.environ["AWS_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["FEAST_S3_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["S3_ENDPOINT_URL"] = MINIO_ENDPOINT
@@ -35,8 +42,8 @@ os.environ.setdefault("REDIS_CONNECTION_STRING", "localhost:6379")
 def get_s3_filesystem():
     """Khởi tạo s3fs client kết nối MinIO."""
     return s3fs.S3FileSystem(
-        key="minioadmin",
-        secret="minioadmin",
+        key=access_key,
+        secret=secret_key,
         client_kwargs={"endpoint_url": MINIO_ENDPOINT},
     )
 

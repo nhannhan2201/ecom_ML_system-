@@ -113,11 +113,18 @@ def build_and_run_optimized_job():
     config.set_string("table.exec.source.idle-timeout", "5000 ms")
 
     # [OPTIMIZATION S3 MINIO]: Cấu hình kết nối MinIO S3 FileSystem
-    minio_endpoint = "http://minio:9000" if IS_CLUSTER else "http://localhost:9000"
+    minio_endpoint = os.environ.get("MINIO_ENDPOINT") or ("http://minio:9000" if IS_CLUSTER else "http://localhost:9000")
+    minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+    minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not minio_access_key:
+        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+    if not minio_secret_key:
+        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
     config.set_string("s3.endpoint", minio_endpoint)
     config.set_string("s3.path.style.access", "true")
-    config.set_string("s3.access-key", "minioadmin")
-    config.set_string("s3.secret-key", "minioadmin")
+    config.set_string("s3.access-key", minio_access_key)
+    config.set_string("s3.secret-key", minio_secret_key)
     config.set_string("s3.ssl.enabled", "false")
     config.set_string("s3.region", "us-east-1")
 

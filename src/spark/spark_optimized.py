@@ -2,22 +2,22 @@
 ================================================================================
 SRC/SPARK/SPARK_OPTIMIZED.PY - SPARK BATCH PROCESSING TỐI ƯU TOÀN DIỆN
 Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Tác giả: Hoàng Minh Nhân & Antigravity AI
+Tác giả: Hoàng Minh Nhân
 
-MỤC TIÊU RUBRIC BIG DATA, LAKEHOUSE & MLOPS:
-1. Data Storage Optimization (2.0đ):
+MỤC TIÊU VẬN HÀNH BIG DATA, LAKEHOUSE & MLOPS:
+1. Data Storage Optimization:
    - Compaction: Gom nhiều file nhỏ thành file lớn (~37MB - 42MB).
    - Z-Ordering: Sắp xếp đa chiều theo (user_id) kích hoạt Data Skipping.
-2. Data Pipeline Orchestration (Airflow) (12.0đ):
+2. Data Pipeline Orchestration (Airflow):
    - Pipeline DP1: Ingest Raw Data (CSV + Staging JSON) vào Bronze Zone + Validate Stage.
    - Pipeline DP2: Ingest Bronze vào Silver & Gold DWH (dim_product SCD2, dim_user, fact_user_events) + Validate Stage.
    - Pipeline DP3: Ingest Silver vào Feature Table (feat_user_30d) & Ground Truth (user_labels) + Validate Stage.
-3. Big Data Processing Optimization (16.0đ):
+3. Big Data Processing Optimization:
    - Skew Handling: Adaptive Query Execution (AQE) Skew Join + Broadcast Join + Salting Key.
    - High Cardinality: Rút gọn category_level1 + approx_count_distinct (HyperLogLog) triệt tiêu Spill Disk.
    - Schema Evolution: mergeSchema = true, gộp mượt mà batch cũ (9 cột) và batch mới (10 cột).
    - Deduplication: Khử rác trùng lặp theo bộ khóa bằng dropDuplicates.
-4. Schema Design (10.0đ):
+4. Schema Design:
    - dim_product SCD Type 2 (valid_from_ts, valid_to_ts, is_current, product_sk).
    - fact_user_events (Pure Fact: có product_sk, xóa bỏ hoàn toàn product_id).
    - feat_user_30d (có event_timestamp, created).
@@ -32,13 +32,8 @@ import argparse
 import urllib.request
 import json
 
-if "JAVA_HOME" not in os.environ:
-    if os.path.exists("/opt/conda/envs/learn_database/jre"):
-        os.environ["JAVA_HOME"] = "/opt/conda/envs/learn_database/jre"
-        os.environ["PATH"] = f"/opt/conda/envs/learn_database/jre/bin:{os.environ.get('PATH', '')}"
-    elif os.path.exists("/home/nhan/miniconda3/envs/learn_database/jre"):
-        os.environ["JAVA_HOME"] = "/home/nhan/miniconda3/envs/learn_database/jre"
-        os.environ["PATH"] = f"/home/nhan/miniconda3/envs/learn_database/jre/bin:{os.environ.get('PATH', '')}"
+if "JAVA_HOME" in os.environ and os.path.exists(os.environ["JAVA_HOME"]):
+    os.environ["PATH"] = f"{os.environ['JAVA_HOME']}/bin:{os.environ.get('PATH', '')}"
 
 os.environ["PYSPARK_PYTHON"] = sys.executable
 os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
@@ -84,6 +79,13 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
     except Exception as e:
         logger.warning(f"Could not resolve hostname for {minio_endpoint}: {e}")
 
+    minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+    minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not minio_access_key:
+        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+    if not minio_secret_key:
+        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
     logger.info(f">>> Đang khởi tạo SparkSession chế độ OPTIMIZED (MinIO endpoint: {minio_endpoint})...")
     
     spark = (
@@ -115,8 +117,8 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
         
         .config("spark.hadoop.fs.s3a.endpoint", minio_endpoint)
-        .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.access.key", minio_access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.S3AFileSystem" if False else "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")

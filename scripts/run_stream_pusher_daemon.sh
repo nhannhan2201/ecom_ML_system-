@@ -1,6 +1,6 @@
 #!/bin/bash
 # ==============================================================================
-# SCRIPT KHỞI CHẠY FEAST STREAM PUSHER DAEMON (RUBRIC 4.4 & 4.5)
+# SCRIPT KHỞI CHẠY FEAST STREAM PUSHER DAEMON
 # Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
 # ==============================================================================
 
@@ -8,15 +8,12 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${PROJECT_ROOT}/logs"
 mkdir -p "${LOG_DIR}"
 
-PYTHON_BIN="/home/nhan/miniconda3/envs/learn_database/bin/python"
-if [ ! -f "${PYTHON_BIN}" ]; then
-    PYTHON_BIN="$(which python3)"
-fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
-export MINIO_ENDPOINT="http://localhost:9000"
-export REDIS_HOST="localhost"
-export REDIS_PORT="6379"
-export KAFKA_BOOTSTRAP_SERVERS="localhost:9092"
+export MINIO_ENDPOINT="${MINIO_ENDPOINT:-http://localhost:9000}"
+export REDIS_HOST="${REDIS_HOST:-localhost}"
+export REDIS_PORT="${REDIS_PORT:-6379}"
+export KAFKA_BOOTSTRAP_SERVERS="${KAFKA_BOOTSTRAP_SERVERS:-localhost:9092}"
 
 PID_FILE="${LOG_DIR}/stream_pusher.pid"
 

@@ -17,13 +17,13 @@ x-airflow-common: &airflow-common
   image: ecom-airflow-spark:2.7.3
   environment:
     - AIRFLOW__CORE__EXECUTOR=LocalExecutor
-    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@airflow_postgres:5432/airflow
+    - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://${AIRFLOW_POSTGRES_USER:-airflow}:${AIRFLOW_POSTGRES_PASSWORD:-airflow}@airflow_postgres:5432/${AIRFLOW_POSTGRES_DB:-airflow}
     - AIRFLOW__CORE__LOAD_EXAMPLES=false
     - AIRFLOW__CORE__LOAD_DEFAULT_CONNECTIONS=false
     - AIRFLOW__CORE__DEFAULT_TIMEZONE=Asia/Ho_Chi_Minh
     - AIRFLOW__WEBSERVER__DEFAULT_UI_TIMEZONE=Asia/Ho_Chi_Minh
     - AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION=false
-    - AIRFLOW_UID=1000
+    - AIRFLOW_UID=${AIRFLOW_UID:-1000}
     - PYTHONPATH=/opt/airflow/ecom_project:/opt/airflow/dags
   volumes:
     - ../dags:/opt/airflow/dags
@@ -39,15 +39,15 @@ services:
     image: postgres:15-alpine
     container_name: airflow_postgres
     environment:
-      - POSTGRES_USER=airflow
-      - POSTGRES_PASSWORD=airflow
-      - POSTGRES_DB=airflow
+      - POSTGRES_USER=${AIRFLOW_POSTGRES_USER:-airflow}
+      - POSTGRES_PASSWORD=${AIRFLOW_POSTGRES_PASSWORD:-airflow}
+      - POSTGRES_DB=${AIRFLOW_POSTGRES_DB:-airflow}
     ports:
-      - "5433:5432"
+      - "${AIRFLOW_POSTGRES_PORT:-5433}:5432"
     volumes:
       - airflow_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "airflow"]
+      test: ["CMD", "pg_isready", "-U", "${AIRFLOW_POSTGRES_USER:-airflow}"]
       interval: 5s
       retries: 5
     restart: always
@@ -68,7 +68,7 @@ services:
     container_name: airflow_webserver
     command: webserver
     ports:
-      - "8080:8080"
+      - "${AIRFLOW_WEBSERVER_PORT:-8080}:8080"
     healthcheck:
       test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
       interval: 10s

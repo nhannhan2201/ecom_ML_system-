@@ -6,11 +6,11 @@ services:
     container_name: ecom_postgres
     restart: unless-stopped
     ports:
-      - "5432:5432"
+      - "${POSTGRES_DWH_PORT:-5432}:5432"
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: ecom_dwh
+      POSTGRES_USER: ${POSTGRES_DWH_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_DWH_PASSWORD:-postgres}
+      POSTGRES_DB: ${POSTGRES_DWH_DB:-ecom_dwh}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:

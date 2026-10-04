@@ -60,6 +60,14 @@ def create_baseline_spark_session() -> SparkSession:
     """
     logger.info(">>> Đang khởi tạo SparkSession chế độ BASELINE (TẮT TẤT CẢ TỐI ƯU)...")
     
+    minio_endpoint = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
+    minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+    minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not minio_access_key:
+        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+    if not minio_secret_key:
+        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
     spark = (
         SparkSession.builder
         .appName("ECom-Spark-Offline-Baseline")
@@ -72,9 +80,9 @@ def create_baseline_spark_session() -> SparkSession:
         )
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
-        .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.endpoint", minio_endpoint)
+        .config("spark.hadoop.fs.s3a.access.key", minio_access_key)
+        .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")

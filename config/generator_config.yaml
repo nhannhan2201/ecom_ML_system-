@@ -66,8 +66,6 @@ batch_generator:
   # Cấu hình lưu trữ sau khi sinh dữ liệu (Rubric: Store data into MinIO - 2đ)
   minio:
     endpoint_url: "http://localhost:9000"
-    access_key: "minioadmin"
-    secret_key: "minioadmin"
     bucket_name: "ecommerce-raw"
     part1_object_name: "batch/raw_events_old.csv"  # 01/10 -> 15/10: 9 cột (chưa có discount_percent)
     part2_object_name: "batch/raw_events_new.csv"  # 16/10 -> 25/10: 10 cột (đã thêm discount_percent)

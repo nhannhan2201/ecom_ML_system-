@@ -2,24 +2,24 @@
 """
 scripts/setup_dwh_schemas.py
 ================================================================================
-THIẾT LẬP DATA WAREHOUSE TOÀN DIỆN TRÊN POSTGRESQL (RUBRIC MINI & FINAL COURSEWORK)
+THIẾT LẬP DATA WAREHOUSE TOÀN DIỆN TRÊN POSTGRESQL
 ================================================================================
-Mục tiêu bài tập Rubric:
-1. Tạo 3 Schemas chuyên nghiệp tương ứng 3 Zones: `bronze`, `silver`, `gold` (Rubric 2.0đ).
+Mục tiêu vận hành:
+1. Tạo 3 Schemas chuyên nghiệp tương ứng 3 Zones: `bronze`, `silver`, `gold`.
 2. Xây dựng cấu trúc bảng chuẩn mực:
    - `bronze.raw_events`: Dữ liệu thô 11 cột.
    - `silver.stg_events`: Dữ liệu làm sạch 14 cột, phân vùng date.
-   - `gold.dim_product`: Bảng chiều SCD Type 2 (valid_from_ts, valid_to_ts, is_current, product_sk) (Rubric 2.0đ).
+   - `gold.dim_product`: Bảng chiều SCD Type 2 (valid_from_ts, valid_to_ts, is_current, product_sk).
    - `gold.dim_user`: Bảng chiều người dùng (user_id PK).
-   - `gold.fact_user_events`: Bảng sự kiện Pure Fact (liên kết khóa ngoại FK với dim_product & dim_user) (Rubric 2.0đ).
-   - `gold.feat_user_30d`: Bảng Feature Store có 2 cột event_timestamp & created chuẩn Feast (Rubric 2.0đ).
+   - `gold.fact_user_events`: Bảng sự kiện Pure Fact (liên kết khóa ngoại FK với dim_product & dim_user).
+   - `gold.feat_user_30d`: Bảng Feature Store có 2 cột event_timestamp & created chuẩn Feast.
    - `gold.user_labels`: Bảng nhãn Ground Truth (target_purchase_1h).
 3. Nạp dữ liệu mẫu/thực tế từ MinIO Lakehouse vào PostgreSQL để DBeaver xem được dữ liệu thật.
-4. Tối ưu hóa lưu trữ Data Warehouse (Indexing - Rubric 2.0đ):
+4. Tối ưu hóa lưu trữ Data Warehouse (Indexing):
    - Đo lường BEFORE Index (Sequential Scan).
    - Tạo Composite B-Tree Index trên (user_id, event_time DESC).
    - Đo lường AFTER Index (Bitmap Index Scan).
-   - In bảng phân tích hiệu năng phục vụ nộp báo cáo.
+   - In bảng phân tích hiệu năng phục vụ đánh giá.
 ================================================================================
 """
 
@@ -32,16 +32,20 @@ import psycopg2.extras
 import pyarrow.dataset as ds
 from pyarrow.fs import S3FileSystem
 
-# Cấu hình kết nối
-PG_HOST = "localhost"
-PG_PORT = 5432
-PG_USER = "postgres"
-PG_PASS = "postgres"
-PG_DB   = "ecom_dwh"
+# Cấu hình kết nối từ biến môi trường
+PG_HOST = os.getenv("POSTGRES_DWH_HOST", "localhost")
+PG_PORT = int(os.getenv("POSTGRES_DWH_PORT", "5432"))
+PG_USER = os.getenv("POSTGRES_DWH_USER", "postgres")
+PG_PASS = os.getenv("POSTGRES_DWH_PASSWORD", "postgres")
+PG_DB   = os.getenv("POSTGRES_DWH_DB", "ecom_dwh")
 
-MINIO_ENDPOINT   = "http://localhost:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
+MINIO_ENDPOINT   = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+if not MINIO_ACCESS_KEY:
+    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+if not MINIO_SECRET_KEY:
+    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
 def get_connection():
     return psycopg2.connect(
@@ -335,7 +339,7 @@ def sync_data_from_lakehouse(conn):
 
 
 # ==============================================================================
-# BƯỚC 3: BENCHMARK TỐI ƯU HÓA LƯU TRỮ DWH (INDEXING - RUBRIC 2.0Đ)
+# BƯỚC 3: BENCHMARK TỐI ƯU HÓA LƯU TRỮ DWH (INDEXING)
 # ==============================================================================
 def run_explain_analyze(conn, user_id, min_time, label):
     query = """
@@ -371,7 +375,7 @@ def run_explain_analyze(conn, user_id, min_time, label):
 
 def benchmark_dwh_indexing(conn):
     print("\n" + "=" * 80)
-    print(" ⚡ [BƯỚC 3]: THỰC THI BENCHMARK DATA WAREHOUSE INDEXING (RUBRIC 2.0Đ)")
+    print(" ⚡ [BƯỚC 3]: THỰC THI BENCHMARK DATA WAREHOUSE INDEXING")
     print("=" * 80)
 
     # Chọn 1 user_id có nhiều sự kiện thực tế để test
@@ -422,7 +426,7 @@ def benchmark_dwh_indexing(conn):
     cost_red = (1 - (metrics_after["cost_total"] / max(metrics_before["cost_total"], 1))) * 100
 
     print("\n" + "=" * 80)
-    print(" 📊 BẢNG TỔNG HỢP HIỆU QUẢ DATA WAREHOUSE INDEXING (NỘP RUBRIC 2.0Đ)")
+    print(" 📊 BẢNG TỔNG HỢP HIỆU QUẢ DATA WAREHOUSE INDEXING")
     print("=" * 80)
     print(f"{'Tiêu chí so sánh':<32} | {'Trước Optimize (Baseline)':<30} | {'Sau Optimize (Composite Index)':<30} | {'Mức độ cải thiện'}")
     print("-" * 115)

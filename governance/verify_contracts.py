@@ -37,9 +37,16 @@ if "ecom_minio" in MINIO_ENDPOINT:
 
 def get_s3fs():
     """Initialize an s3fs S3FileSystem client configured for local or container MinIO storage."""
+    access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+    secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+    if not access_key:
+        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+    if not secret_key:
+        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
     return s3fs.S3FileSystem(
-        key="minioadmin",
-        secret="minioadmin",
+        key=access_key,
+        secret=secret_key,
         client_kwargs={"endpoint_url": MINIO_ENDPOINT}
     )
 

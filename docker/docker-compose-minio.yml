@@ -13,13 +13,13 @@ services:
     
     # Ánh xạ cổng mạng: [Cổng máy thật (Host)] : [Cổng bên trong Container]
     ports:
-      - "9000:9000"  # Cổng S3 API: Code Python (boto3), PySpark, Trino, Flink kết nối vào đây
-      - "9001:9001"  # Cổng Web Console: Mở trình duyệt truy cập http://localhost:9001
+      - "${MINIO_PORT:-9000}:9000"  # Cổng S3 API: Code Python (boto3), PySpark, Trino, Flink kết nối vào đây
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"  # Cổng Web Console: Mở trình duyệt truy cập http://localhost:9001
       
     # Thiết lập biến môi trường cho tài khoản quản trị cấp cao nhất (Root Admin)
     environment:
-      MINIO_ROOT_USER: minioadmin      # Tên đăng nhập
-      MINIO_ROOT_PASSWORD: minioadmin  # Mật khẩu đăng nhập
+      MINIO_ROOT_USER: ${MINIO_ACCESS_KEY:-minioadmin}      # Tên đăng nhập
+      MINIO_ROOT_PASSWORD: ${MINIO_SECRET_KEY:-minioadmin}  # Mật khẩu đăng nhập
       
     # Lệnh khởi động MinIO:
     # - "server /data": chạy chế độ máy chủ và lưu trữ file vào thư mục /data trong container

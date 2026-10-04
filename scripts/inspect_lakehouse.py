@@ -25,9 +25,15 @@ from pyarrow.fs import S3FileSystem
 import pyarrow.dataset as ds
 import pyarrow.json as paj
 
-S3_ENDPOINT = "http://localhost:9000"
-S3_ACCESS_KEY = "minioadmin"
-S3_SECRET_KEY = "minioadmin"
+import os
+
+S3_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")
+S3_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+S3_SECRET_KEY = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+if not S3_ACCESS_KEY:
+    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+if not S3_SECRET_KEY:
+    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
 fs = S3FileSystem(
     endpoint_override=S3_ENDPOINT,
@@ -94,8 +100,7 @@ def summarize_all():
     # Kiểm tra Flink Staging
     try:
         staging_files = fs.get_file_info(
-            S3FileSystem().from_uri("http://minioadmin:minioadmin@localhost:9000/ecommerce-raw/staging/stream_events/")[1]
-            if False else ds.dataset("ecommerce-raw/staging/stream_events", filesystem=fs, format="json").files
+            ds.dataset("ecommerce-raw/staging/stream_events", filesystem=fs, format="json").files
         )
         staging_count = sum(1 for _ in open_staging_sample(1000000))
         print(f" {'staging/stream_events (Flink)':<32} | {staging_count:>12,} | {10:>7} | JSON (Append-only)")

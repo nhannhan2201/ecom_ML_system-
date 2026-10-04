@@ -6,9 +6,9 @@
 set -e
 
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PYFLINK_BIN="/home/nhan/miniconda3/envs/learn_database/lib/python3.10/site-packages/pyflink/bin/flink"
-PYTHON_EXEC="/home/nhan/miniconda3/envs/learn_database/bin/python"
-JOBMANAGER_REST="localhost:8081"
+PYTHON_EXEC="${PYTHON_BIN:-python3}"
+PYFLINK_BIN="$("$PYTHON_EXEC" -c "import pyflink, os; print(os.path.join(os.path.dirname(pyflink.__file__), 'bin', 'flink'))" 2>/dev/null || which flink || echo "flink")"
+JOBMANAGER_REST="${FLINK_JOBMANAGER_HOST:-localhost}:${FLINK_REST_PORT:-8081}"
 
 ACTION="${1:-list}"
 

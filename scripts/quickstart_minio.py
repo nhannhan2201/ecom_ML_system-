@@ -14,12 +14,20 @@ def main():
     # - endpoint_url: Cổng 9000 là cổng tiếp nhận lệnh S3 API của MinIO
     # - aws_access_key_id / secret_access_key: Tài khoản root đã khai báo trong docker-compose
     # - signature_version='s3v4': Chuẩn bảo mật ký tên phiên bản 4 của AWS S3
-    print("⏳ Đang kết nối tới MinIO tại http://localhost:9000...")
+    endpoint = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
+    access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+    secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not access_key:
+        raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+    if not secret_key:
+        raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
+    print(f"⏳ Đang kết nối tới MinIO tại {endpoint}...")
     s3_client = boto3.client(
         's3',
-        endpoint_url='http://localhost:9000',
-        aws_access_key_id='minioadmin',
-        aws_secret_access_key='minioadmin',
+        endpoint_url=endpoint,
+        aws_access_key_id=access_key,
+        aws_secret_access_key=secret_key,
         config=Config(signature_version='s3v4'),
         region_name='us-east-1'
     )

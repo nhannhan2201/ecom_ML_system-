@@ -28,8 +28,15 @@ REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = os.getenv("REDIS_PORT", "6379")
 os.environ.setdefault("REDIS_CONNECTION_STRING", f"{REDIS_HOST}:{REDIS_PORT}")
 
-os.environ["AWS_ACCESS_KEY_ID"] = "minioadmin"
-os.environ["AWS_SECRET_ACCESS_KEY"] = "minioadmin"
+access_key = os.getenv("MINIO_ACCESS_KEY") or os.getenv("AWS_ACCESS_KEY_ID")
+secret_key = os.getenv("MINIO_SECRET_KEY") or os.getenv("AWS_SECRET_ACCESS_KEY")
+if not access_key:
+    raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+if not secret_key:
+    raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
+
+os.environ["AWS_ACCESS_KEY_ID"] = access_key
+os.environ["AWS_SECRET_ACCESS_KEY"] = secret_key
 os.environ["AWS_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["FEAST_S3_ENDPOINT_URL"] = MINIO_ENDPOINT
 os.environ["AWS_DEFAULT_REGION"] = "us-east-1"
@@ -99,8 +106,8 @@ def ensure_offline_parquet_exists():
 
         endpoint_host = MINIO_ENDPOINT.replace("http://", "").replace("https://", "")
         minio_fs = pafs.S3FileSystem(
-            access_key="minioadmin",
-            secret_key="minioadmin",
+            access_key=access_key,
+            secret_key=secret_key,
             endpoint_override=endpoint_host,
             scheme="http",
         )

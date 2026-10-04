@@ -2,16 +2,16 @@
 ================================================================================
 MODULE: BATCH DATA GENERATOR (OFFLINE DATA FEEDER & BENCHMARK SCALER)
 Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Tác giả: Hoàng Minh Nhân & Antigravity AI
+Tác giả: Hoàng Minh Nhân
 
-Đáp ứng trọn vẹn Rubric Mini-coursework (Implement Data Generator: 12/20 điểm):
-1. Simulate Skew & High Cardinality (tận dụng phân phối tự nhiên từ REES46) (4đ)
+Mục tiêu thiết kế:
+1. Simulate Skew & High Cardinality (tận dụng phân phối tự nhiên từ REES46)
 2. Simulate Schema Evolution:
-   - Part 1 (01/10 -> 15/10): Đúng 9 cột nguyên bản (hoàn toàn CHƯA CÓ discount_percent) (2đ)
-   - Part 2 (16/10 -> 25/10): Đúng 10 cột (bổ sung cột discount_percent) (2đ)
-3. Simulate Another Offline Data Problem: Tiêm ~2% Duplicate Rate vào cả 2 phần (2đ)
-4. Using Generator Configuration: Đọc toàn bộ tham số từ config/generator_config.yaml (2đ)
-5. Store Data into MinIO: Upload lên MinIO bucket 'ecommerce-raw' (2đ)
+   - Part 1 (01/10 -> 15/10): Đúng 9 cột nguyên bản (hoàn toàn CHƯA CÓ discount_percent)
+   - Part 2 (16/10 -> 25/10): Đúng 10 cột (bổ sung cột discount_percent)
+3. Simulate Another Offline Data Problem: Tiêm ~2% Duplicate Rate vào cả 2 phần
+4. Using Generator Configuration: Đọc toàn bộ tham số từ config/generator_config.yaml
+5. Store Data into MinIO: Upload lên MinIO bucket 'ecommerce-raw'
    - Chế độ small/medium: upload raw_events_old.csv & raw_events_new.csv
    - Chế độ full: streaming chunked scaling deterministic replay đạt target >=100GB
      chia nhỏ thành các part files raw_events_old_part-XXXXX.csv & raw_events_new_part-XXXXX.csv
@@ -136,8 +136,12 @@ class BatchDataGenerator:
     def _init_s3_client(self):
         """Khởi tạo Boto3 S3 Client kết nối tới MinIO."""
         endpoint = os.environ.get("MINIO_ENDPOINT") or self.minio_cfg.get("endpoint_url", "http://localhost:9000")
-        access_key = os.environ.get("MINIO_ACCESS_KEY") or self.minio_cfg.get("access_key", "minioadmin")
-        secret_key = os.environ.get("MINIO_SECRET_KEY") or self.minio_cfg.get("secret_key", "minioadmin")
+        access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+        secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+        if not access_key:
+            raise ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY' (or 'AWS_ACCESS_KEY_ID')")
+        if not secret_key:
+            raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
         logger.info(f"Kết nối tới MinIO tại: {endpoint}")
         return boto3.client(

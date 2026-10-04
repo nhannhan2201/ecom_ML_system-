@@ -49,9 +49,9 @@ def create_spark_session():
             "org.apache.spark.sql.delta.catalog.DeltaCatalog",
         )
         # Cấu hình MinIO S3A
-        .config("spark.hadoop.fs.s3a.endpoint", "http://localhost:9000")
-        .config("spark.hadoop.fs.s3a.access.key", "minioadmin")
-        .config("spark.hadoop.fs.s3a.secret.key", "minioadmin")
+        .config("spark.hadoop.fs.s3a.endpoint", os.environ.get("MINIO_ENDPOINT", "http://localhost:9000"))
+        .config("spark.hadoop.fs.s3a.access.key", os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID") or (_ for _ in ()).throw(ValueError("Missing required environment variable: 'MINIO_ACCESS_KEY'")))
+        .config("spark.hadoop.fs.s3a.secret.key", os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY") or (_ for _ in ()).throw(ValueError("Missing required environment variable: 'MINIO_SECRET_KEY'")))
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")

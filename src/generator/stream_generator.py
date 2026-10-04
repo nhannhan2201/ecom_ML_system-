@@ -2,12 +2,12 @@
 ================================================================================
 MODULE: STREAMING DATA GENERATOR (ONLINE DATA FEEDER)
 Dự án: E-Commerce Real-Time Purchase Propensity Prediction System
-Tác giả: Hoàng Minh Nhân & Antigravity AI
+Tác giả: Hoàng Minh Nhân
 
-Đáp ứng trọn vẹn chuẩn Rubric Mini-coursework (Implement Data Generator: 8/20 điểm):
-1. Simulate Streaming Problem 1: Burst Traffic (Flash Sale x10 throughput trong 30s) (3đ)
-2. Simulate Streaming Problem 2: Late Arrival (5% sự kiện trễ 5-15 phút qua Event-Time-Driven Buffer) (3đ)
-3. Simulate Streaming Problem 3: Streaming Duplicate (1.5% sự kiện trùng lặp do network retry) (2đ)
+Mục tiêu thiết kế:
+1. Simulate Streaming Problem 1: Burst Traffic (Flash Sale x10 throughput trong 30s)
+2. Simulate Streaming Problem 2: Late Arrival (5% sự kiện trễ 5-15 phút qua Event-Time-Driven Buffer)
+3. Simulate Streaming Problem 3: Streaming Duplicate (1.5% sự kiện trùng lặp do network retry)
 4. Sử dụng Apache Kafka Topic 'ecommerce_stream_events' với key=user_id (bảo toàn thứ tự partition)
 5. Quản lý trạng thái bằng Smart Checkpoint: Hỗ trợ tắt máy mở lại chạy tiếp (Resume) và Reset (--clean)
 ================================================================================
