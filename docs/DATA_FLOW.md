@@ -37,7 +37,7 @@
                                 │
                                 ▼
                         Spark Batch (DP2)
-             (Khử trùng lặp Spark dropDuplicates, Salting Skew Join)
+             (Khử trùng lặp dropDuplicates, Broadcast Join bảng nhỏ)
                                 │
                  ┌──────────────┴──────────────┐
                  ▼                             ▼
@@ -134,7 +134,7 @@ Hệ thống phân định ranh giới thời gian chặt chẽ giữa các tầ
    * Lưu trữ phân vùng theo `date` tại `s3a://ecommerce-lakehouse/bronze/raw_events/`.
 2. **DP2: Bronze → Silver & Gold DWH:**
    * **Tầng Silver (`stg_events`):** Thực hiện `dropDuplicates(["user_id", "event_time", "product_id", "event_type"])` để khử trùng lặp từ Batch và Streaming Staging. Điền giá trị mặc định cho `discount_percent = 0.0`.
-   * **Xử lý Data Skew:** Do ngành hàng `electronics` chiếm tỷ trọng lớn, Spark áp dụng Salting key (chia 4 nhánh ngẫu nhiên) kết hợp `F.broadcast()` khi join với danh mục, triệt tiêu hiện tượng lệch tải partition.
+   * **Tối ưu Join bảng nhỏ & Xử lý Skew:** Spark áp dụng Broadcast Hash Join khi kết hợp bảng danh mục nhỏ, loại bỏ hoàn toàn shuffle qua mạng. Kỹ thuật Salting và AQE Skew Join được phân tích độc lập trên khóa `user_id` tại `src/spark/skew_experiment.py`.
    * **Xây dựng Gold DWH (Kimball Star Schema):**
      * `dim_product`: **SCD Type 2 lịch sử** dựa trên các trạng thái thuộc tính quan sát được với `valid_from_ts`, `valid_to_ts = lead(valid_from_ts)`, `is_current`, và surrogate key `product_sk`.
      * `dim_user`: Bảng **Snapshot / Current-state dimension** lưu trạng thái hiện tại của người dùng (`first_seen`, `last_seen`, `total_lifetime_events`, `is_active`, `valid_from_ts`, `valid_to_ts`, `is_current`).

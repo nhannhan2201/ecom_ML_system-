@@ -58,11 +58,11 @@ Nguon: [docs/evidence/feast_incremental.txt](evidence/feast_incremental.txt) qua
 
 Minh chung chup tu giao dien va log thuc thi Feast:
 
-![Minh chung Feast Incremental Materialization](screenshots/E18_feast_materialize.png)
-*Anh chung minh: Log thuc thi materialize dong bo dac trung tu MinIO Parquet len Redis Online Store theo co che incremental checkpoint.*
+![Minh chứng Feast Incremental Materialization](screenshots/E29_feast_incremental_proof.png)
+*Ảnh chứng minh: Log thực thi materialize đồng bộ đặc trưng từ MinIO Parquet lên Redis Online Store theo cơ chế incremental checkpoint.*
 
-![Minh chung Online Serving Benchmark](screenshots/E19_feast_online_serving.png)
-*Anh chung minh: Truy van 9 dac trung truc tiep tu Redis Online Store dat do tre trung binh 1.02ms (< 2ms).*
+![Minh chứng Online Serving Benchmark](screenshots/E30_feast_serving_latency.png)
+*Ảnh chứng minh: Truy vấn 9 đặc trưng trực tiếp từ Redis Online Store đạt độ trễ trung bình 1.02ms (< 2ms).*
 
 ---
 

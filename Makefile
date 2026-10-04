@@ -19,7 +19,7 @@ PYTHON_EXEC ?= python3
 .PHONY: help install download-jars up-infra up-flink up-airflow up-datahub down \
         init-airflow gen-data gen-data-skewed gen-data-full gen-stream \
         spark-baseline spark-opt flink-baseline flink-opt dwh-setup \
-        governance-sync governance-verify feast-apply test lint docker-size profile-data
+        governance-sync governance-verify feast-apply test lint docker-size profile-data check-evidence
 
 help: ## Show this help message and exit
 	@echo "========================================================================"
@@ -150,3 +150,7 @@ profile-stream: ## Profile streaming generator manifest, late arrival and duplic
 measure-cardinality: ## Measure high-cardinality replica scaling and SCD2 versions
 	@echo "--> Measuring high-cardinality replica scaling..."
 	$(PYTHON_EXEC) scripts/measure_scale_cardinality.py
+
+check-evidence: ## Audit docs/EVIDENCE_TODO.md screenshot completion and broken links
+	@echo "--> Auditing documentation evidence and screenshot checklist..."
+	$(PYTHON_EXEC) scripts/check_evidence.py

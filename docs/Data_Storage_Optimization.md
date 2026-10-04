@@ -1,8 +1,8 @@
 # Bao Cao Toi Uu Hoa Luu Tru (Data Storage Optimization)
 
-> Hang muc rubric: Data Storage Optimization (Lakehouse Optimization 2.0d, Data Warehouse Optimization 2.0d = 4.0 diem).  
-> Code: [src/spark/spark_optimized.py](../src/spark/spark_optimized.py), [scripts/optimize_storage.py](../scripts/optimize_storage.py), [scripts/setup_dwh_schemas.py](../scripts/setup_dwh_schemas.py).  
-> Cach chay lai: `python3 scripts/optimize_storage.py` va `python3 scripts/benchmark_dwh_indexing.py`.
+> Hạng mục rubric: Data Storage: Lakehouse compaction & Z-order (3.0đ), Datawarehouse indexing (3.0đ) = 6.0 điểm.  
+> Code: [src/spark/spark_optimized.py](../src/spark/spark_optimized.py), [scripts/optimize_storage.py](../scripts/optimize_storage.py), [scripts/dwh_explain_analyze.py](../scripts/dwh_explain_analyze.py).  
+> Cách chạy lại: `python3 scripts/optimize_storage.py` và `python3 scripts/dwh_explain_analyze.py`.
 
 ---
 
@@ -65,11 +65,14 @@ Nguon: [docs/evidence/dwh_explain_analyze.txt](evidence/dwh_explain_analyze.txt)
 
 Minh chung duoc ghi nhan tu ket qua terminal va cong cu quan tri:
 
-![Minh chung Lakehouse Storage Optimize](screenshots/E11_lakehouse_optimization.png)
-*Anh chung minh: Thuc thi lenh OPTIMIZE ZORDER BY user_id tren MinIO Delta Lake va truy van cai thien tu 3.011s xuong 1.575s.*
+![Minh chứng Lakehouse Storage Optimize](screenshots/E10_spark_lakehouse_storage.png)
+*Ảnh chứng minh: Thực thi lệnh OPTIMIZE ZORDER BY user_id trên MinIO Delta Lake gom gọn các file parquet.*
 
-![Minh chung DWH EXPLAIN ANALYZE](screenshots/E12_dwh_explain_analyze.png)
-*Anh chung minh: Kế hoach thuc thi EXPLAIN (ANALYZE, BUFFERS) chuyen tu Parallel Seq Scan (395ms, 35K buffers) sang Bitmap Index Scan (2.6ms, 30 buffers).*
+![Minh chứng Lakehouse Inspection](screenshots/E14_lakehouse_inspection.png)
+*Ảnh chứng minh: Bảng tổng hợp số bản ghi và phân vùng Lakehouse qua script inspect_lakehouse.py.*
+
+![Minh chứng DWH EXPLAIN ANALYZE](screenshots/E15_dwh_explain_analyze.png)
+*Ảnh chứng minh: Kế hoạch thực thi EXPLAIN (ANALYZE, BUFFERS) chuyển từ Parallel Seq Scan (395ms) sang Bitmap Index Scan (2.6ms).*
 
 ---
 

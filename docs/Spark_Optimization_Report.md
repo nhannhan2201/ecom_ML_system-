@@ -1,8 +1,8 @@
 # Bao Cao Spark Batch Processing Toi Uu (Optimized)
 
-> Hang muc rubric: Spark job to handle offline data problems (Data Skew 3d, High Cardinality 3d, Schema Evolution 3d, Duplicates 3d, DWH & Feast 4d = 16.0 diem).  
+> Hạng mục rubric: Processing Jobs - Spark: Handle skew (3.0đ), Schema evolution (3.0đ), Offline duplicate (3.0đ), Pipeline integration (2.0đ) = 11.0 điểm.  
 > Code: [src/spark/spark_optimized.py](../src/spark/spark_optimized.py), [src/spark/skew_experiment.py](../src/spark/skew_experiment.py).  
-> Cach chay lai: `make spark-opt` va `make spark-skew`.
+> Cách chạy lại: `make spark-opt` và `make spark-skew`.
 
 ---
 
@@ -68,16 +68,11 @@ Nguon: [docs/evidence/data_profile.md](evidence/data_profile.md) va Spark execut
 
 ## 4. Minh Chung
 
-Cac anh minh chung duoc chup tu Spark UI (`http://localhost:4040`) khi chay `make spark-skew` va `make spark-opt`:
+![Minh chứng Spark UI AQE Skew Join](screenshots/E08_spark_skew_aqe_ui.png)
+*Ảnh chứng minh: Spark AQE tự động phát hiện partition lệch và chia nhỏ thành các sub-partitions, giảm thời gian stage xuống 2.451s.*
 
-![Minh chung Spark UI Skew Baseline](screenshots/E07_spark_skew_baseline.png)
-*Anh chung minh: Stage chay Sort-Merge Join voi AQE tat, task xu ly hot key keo dai nhat.*
-
-![Minh chung Spark UI AQE Skew Join](screenshots/E08_spark_skew_aqe.png)
-*Anh chung minh: Spark AQE tu dong phat hien partition lech va chia nho thanh cac sub-partitions, giam thoi gian stage xuong 2.451s.*
-
-![Minh chung Spark UI Salting](screenshots/E09_spark_skew_salting.png)
-*Anh chung minh: Thuat toan Salting chia deu cac dong hot key qua 4 phan vung, san phang tai giua cac core.*
+![Minh chứng Spark UI Salting](screenshots/E09_spark_skew_salting_ui.png)
+*Ảnh chứng minh: Thuật toán Salting chia đều các dòng hot key qua 4 phân vùng, san phẳng tải giữa các core.*
 
 ---
 

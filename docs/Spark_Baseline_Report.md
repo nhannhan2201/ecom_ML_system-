@@ -59,8 +59,8 @@ Nguon: Do luong pipeline baseline cu the tren may cuc bo:
 
 Minh chung duoc ghi nhan tu giao dien Spark UI (`http://localhost:4040`) khi thuc thi bien the Baseline:
 
-![Minh chung Spark UI Stage Skew Baseline](screenshots/E07_spark_skew_baseline.png)
-*Anh chung minh: Stage thuc hien Sort-Merge Join tren du lieu lech khi tat AQE. Tren Event Timeline xuat hien task straggler keo dai do phai nhan phan lon ban ghi cua hot key.*
+![Minh chứng Spark UI Stage Skew Baseline](screenshots/E07_spark_baseline_ui.png)
+*Ảnh chứng minh: Stage thực hiện Sort-Merge Join trên dữ liệu lệch khi tắt AQE. Trên Event Timeline xuất hiện task straggler kéo dài do phải nhận phần lớn bản ghi của hot key.*
 
 ---
 

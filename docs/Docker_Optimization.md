@@ -64,8 +64,8 @@ Nguon: [docs/evidence/docker_sizes.txt](evidence/docker_sizes.txt) (Do truc tiep
 
 Minh chung duoc ghi nhan tu ket qua terminal:
 
-![Minh chung do luong Docker Sizes](screenshots/E24_docker_size_breakdown.png)
-*Anh chung minh: Ket qua do luong thuc te 3 bien the Docker image, muc giam 1.95 GB giua Baseline (5.47GB) va ban Toi uu (3.52GB).*
+![Minh chứng đo lường Docker Sizes](screenshots/E06_docker_size_comparison.png)
+*Ảnh chứng minh: Kết quả đo lường thực tế 3 biến thể Docker image, mức giảm 1.95 GB giữa Baseline (5.47GB) và bản Tối ưu (3.52GB).*
 
 ---
 
