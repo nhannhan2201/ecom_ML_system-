@@ -8,7 +8,6 @@ Hỗ trợ 2 chế độ:
 """
 
 import os
-import sys
 import time
 import argparse
 from datetime import datetime, timezone
@@ -73,15 +72,15 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
     print(f"⚙️  Chế độ đồng bộ      : {mode.upper()}")
     print(f"🎯 Feature Views        : {', '.join(views)}")
     print(f"📤 Đích lưu trữ (Redis) : {REDIS_HOST}:{REDIS_PORT} (Database 0)")
-    
+
     store = FeatureStore(repo_path=repo_path)
-    
+
     # Đo số keys hiện tại trên Redis trước khi nạp
     r = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=0)
     initial_keys = r.dbsize()
     print(f"📊 Số Keys hiện tại trên Redis trước khi nạp: {initial_keys:,}")
     print("-" * 80)
-    
+
     # Đảm bảo endpoint MinIO phù hợp với môi trường hiện tại (Docker vs Localhost)
     for v_name in views:
         try:
@@ -95,13 +94,13 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
             print(f"⚠️ Could not dynamic-patch feature view {v_name}: {e}")
 
     start_time = time.time()
-    
+
     if mode == "incremental":
         # CHẾ ĐỘ INCREMENTAL: Tự động tra cứu checkpoint lần sync trước
         end_date = parse_datetime(end_str, is_end_of_day=True) if end_str else datetime.now(timezone.utc)
         print(f"🔄 Đang thực thi MATERIALIZE INCREMENTAL đến mốc: {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         print("💡 Feast tự động truy vết checkpoint lần trước trong registry.db và chỉ nạp delta mới.")
-        
+
         store.materialize_incremental(
             end_date=end_date,
             feature_views=views
@@ -110,27 +109,27 @@ def run_materialization(mode: str = "range", start_str: str = None, end_str: str
         # CHẾ ĐỘ RANGE / BACKFILL: Nạp dải ngày chỉ định (Mặc định cho dataset demo 2019)
         start_date = parse_datetime(start_str) if start_str else datetime(2019, 10, 1, 0, 0, 0, tzinfo=timezone.utc)
         end_date = parse_datetime(end_str, is_end_of_day=True) if end_str else datetime(2019, 10, 26, 23, 59, 59, tzinfo=timezone.utc)
-        
+
         print(f"📅 Khoảng thời gian nạp : {start_date.strftime('%Y-%m-%d %H:%M:%S UTC')} ➔ {end_date.strftime('%Y-%m-%d %H:%M:%S UTC')}")
         print("⏳ Đang tiến hành đọc Parquet từ MinIO và ghi nạp lên RAM Redis...")
-        
+
         store.materialize(
             start_date=start_date,
             end_date=end_date,
             feature_views=views
         )
-        
+
     duration = time.time() - start_time
     print("-" * 80)
     print(f"✅ [MATERIALIZE HOÀN TẤT XUẤT SẮC] Thời gian thực thi: {duration:.2f} giây")
-    
+
     # Kiểm tra thực tế trên Redis sau khi nạp
     print("\n🔍 [BƯỚC NGHIỆM THU TRÊN REDIS]:")
     final_keys = r.dbsize()
     print(f"  • Số Keys trước khi nạp            : {initial_keys:,} keys")
     print(f"  • Tổng số Keys hiện tại trên Redis : {final_keys:,} keys")
     print(f"  • Số Keys tăng thêm                : +{final_keys - initial_keys:,} keys")
-    
+
     # Lấy 1 key ngẫu nhiên để xác nhận dữ liệu đã nằm trên RAM
     keys = r.keys(b"*")
     if keys:
@@ -173,7 +172,7 @@ def main():
         default=["user_batch_features_30d"],
         help="Danh sách Feature Views cần nạp (mặc định: user_batch_features_30d)"
     )
-    
+
     args = parser.parse_args()
     run_materialization(
         mode=args.mode,

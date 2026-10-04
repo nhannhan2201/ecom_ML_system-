@@ -37,7 +37,6 @@ GIẢI QUYẾT TRIỆT ĐỂ 3 VẤN ĐỀ STREAMING THEO ĐÚNG CHUẨN RUBRIC:
 """
 
 import os
-import sys
 from pyflink.common import Configuration
 from pyflink.datastream import StreamExecutionEnvironment, CheckpointingMode
 from pyflink.table import StreamTableEnvironment
@@ -344,7 +343,7 @@ def build_and_run_optimized_job():
         if job_client:
             job_id = job_client.get_job_id()
             print("=" * 80)
-            print(f"🎉 JOB FLINK OPTIMIZED ĐÃ ĐƯỢC SUBMIT THÀNH CÔNG!")
+            print("🎉 JOB FLINK OPTIMIZED ĐÃ ĐƯỢC SUBMIT THÀNH CÔNG!")
             print(f"🆔 Job ID: {job_id}")
             print("📊 Hãy mở Flink Web Dashboard để quan sát hiệu năng vượt trội:")
             print("   👉 http://localhost:8081/#/job/" + str(job_id))

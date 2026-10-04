@@ -5,7 +5,6 @@ Kiểm tra toàn diện 9 features: 5 Batch Features (30d) + 4 Stream Features (
 """
 
 import os
-import sys
 import time
 import argparse
 from feast import FeatureStore
@@ -123,12 +122,12 @@ def test_online_serving(custom_user_ids: list = None):
     avg_latency = sum(latencies) / len(latencies)
     min_latency = min(latencies)
 
-    print(f"⏱️  [BENCHMARK TỐC ĐỘ TRUY XUẤT CHO 1 KHÁCH HÀNG]:")
+    print("⏱️  [BENCHMARK TỐC ĐỘ TRUY XUẤT CHO 1 KHÁCH HÀNG]:")
     print(f"   • User ID                             : {sample_user_ids[0]}")
     print(f"   • Độ trễ trung bình (Average Latency) : {avg_latency:.2f} ms")
     print(f"   • Độ trễ tốt nhất (Best Latency)       : {min_latency:.2f} ms")
     if avg_latency < 5.0:
-        print(f"   • Đánh giá SLA (< 5ms)                : ✅ ĐẠT XUẤT SẮC!")
+        print("   • Đánh giá SLA (< 5ms)                : ✅ ĐẠT XUẤT SẮC!")
     else:
         print(f"   • Đánh giá SLA                        : ⚠️ {avg_latency:.2f}ms")
     print("-" * 80)

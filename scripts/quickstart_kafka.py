@@ -26,7 +26,7 @@ def create_topic_if_not_exists(topic_name: str):
     """Sử dụng AdminClient để tự động tạo topic nếu chưa có."""
     print(f"[*] Đang kiểm tra topic '{topic_name}' trên Kafka Broker ({BOOTSTRAP_SERVERS})...")
     admin_client = AdminClient({"bootstrap.servers": BOOTSTRAP_SERVERS})
-    
+
     metadata = admin_client.list_topics(timeout=10)
     if topic_name in metadata.topics:
         print(f"[*] Topic '{topic_name}' đã tồn tại sẵn.")
@@ -165,7 +165,7 @@ def run_quickstart():
     print(f"• Trạng thái Kafka Broker:     HOẠT ĐỘNG HOÀN HẢO ({BOOTSTRAP_SERVERS})")
     print(f"• Trạng thái Producer:         ĐÃ GỬI {len(sample_events)} TIN NHẮN THÀNH CÔNG")
     print(f"• Trạng thái Consumer:         ĐÃ NHẬN {received_count} TIN NHẮN THÀNH CÔNG")
-    print(f"• Web Console trực quan:       http://localhost:8085 (Kafka UI)")
+    print("• Web Console trực quan:       http://localhost:8085 (Kafka UI)")
     print("=" * 80 + "\n")
 
 

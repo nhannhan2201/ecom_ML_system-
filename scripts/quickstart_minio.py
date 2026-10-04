@@ -6,6 +6,7 @@ Script này dùng thư viện chuẩn AWS S3 SDK (boto3) để tương tác vớ
 3. Upload 1 file thử nghiệm để kiểm chứng tính năng ghi dữ liệu
 """
 
+import os
 import boto3
 from botocore.client import Config
 

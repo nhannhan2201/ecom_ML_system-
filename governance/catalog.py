@@ -9,8 +9,8 @@ Nguyên tắc:
 3. Khai báo tường minh Upstream Lineage, Field Schemas, Assertions và Data Contracts.
 """
 
-from dataclasses import dataclass, field
-from typing import List, Dict, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, Optional, Tuple
 
 ENV = "PROD"
 

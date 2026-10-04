@@ -7,7 +7,6 @@ và tạo file notebook chuẩn notebooks/03_stream_data_verification.ipynb.
 import json
 import os
 import time
-from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -47,10 +46,10 @@ while True:
         break
     if msg.error():
         continue
-    
+
     payload = json.loads(msg.value().decode("utf-8"))
     key = msg.key().decode("utf-8") if msg.key() else None
-    
+
     records.append({
         "partition": msg.partition(),
         "offset": msg.offset(),
@@ -116,7 +115,7 @@ late_events = []
 for p in df_stream["partition"].unique():
     df_p = df_stream[df_stream["partition"] == p].sort_values("offset").copy()
     max_time_seen = df_p["parsed_event_time"].iloc[0]
-    
+
     for idx, row in df_p.iterrows():
         curr_time = row["parsed_event_time"]
         if curr_time > max_time_seen:
@@ -181,7 +180,7 @@ print("  -> Đã lưu: docs/screenshots/09_stream_duplicates_and_partitions.png"
 print("\n[*] Đang xuất file Jupyter Notebook notebooks/03_stream_data_verification.ipynb...")
 
 def make_cell(cell_type, text):
-    lines = [l + "\n" for l in text.split("\n")]
+    lines = [line_item + "\n" for line_item in text.split("\n")]
     if lines and lines[-1] == "\n":
         lines = lines[:-1]
     return {

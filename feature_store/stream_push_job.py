@@ -9,7 +9,6 @@ Nhiệm vụ:
 """
 
 import os
-import sys
 import time
 import json
 import signal
@@ -113,7 +112,7 @@ def ensure_offline_parquet_exists():
         )
         file_path = "ecommerce-lakehouse/gold/feat_user_stream/stream_features.parquet"
         file_info = minio_fs.get_file_info(file_path)
-        
+
         schema = pa.schema([
             ("user_id", pa.int64()),
             ("f_views_15m", pa.int64()),
@@ -123,7 +122,7 @@ def ensure_offline_parquet_exists():
             ("event_timestamp", pa.timestamp("us", tz="UTC")),
             ("created", pa.timestamp("us", tz="UTC")),
         ])
-        
+
         if file_info.type == pafs.FileType.NotFound:
             print("[*] Đang khởi tạo file Parquet cấu trúc ban đầu trên MinIO...")
             empty_table = pa.Table.from_batches([], schema=schema)
@@ -141,7 +140,7 @@ def ensure_offline_parquet_exists():
                 df_existing["total_spend_15m"] = df_existing["total_spend_15m"].astype("float64")
                 updated_table = pa.Table.from_pandas(df_existing, schema=schema)
                 pq.write_table(updated_table, file_path, filesystem=minio_fs)
-                print(f"✅ Đã nâng cấp schema stream_features.parquet thành công (4 features)")
+                print("✅ Đã nâng cấp schema stream_features.parquet thành công (4 features)")
     except Exception as e:
         print(f"⚠️ Khởi tạo/nâng cấp offline parquet: {e}")
 
@@ -173,7 +172,7 @@ def run_push_job(target: str = "online", batch_size: int = 50, seed_count: int =
         target_desc = "DUAL-WRITE (Cả Redis Online + MinIO Offline)"
 
     print("=" * 80)
-    print(f"🚀 [FEAST STREAM PUSHER]: ĐỒNG BỘ ĐẶC TRƯNG THỜI GIAN THỰC (15 PHÚT)")
+    print("🚀 [FEAST STREAM PUSHER]: ĐỒNG BỘ ĐẶC TRƯNG THỜI GIAN THỰC (15 PHÚT)")
     print("=" * 80)
     print(f"🎯 Đích nạp (Target)    : {target_desc}")
     print(f"📦 Kafka Topic nguồn    : {FEATURES_TOPIC}")

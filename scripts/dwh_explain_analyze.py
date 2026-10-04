@@ -11,7 +11,6 @@ Purpose:
 """
 
 import os
-import sys
 import psycopg2
 
 def run_benchmark():

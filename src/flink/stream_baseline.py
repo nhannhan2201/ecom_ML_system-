@@ -34,7 +34,6 @@ nhằm làm bộc lộ rõ ràng 3 vấn đề streaming phổ biến trên Flin
 """
 
 import os
-import sys
 from pyflink.common import Configuration
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.table import StreamTableEnvironment
@@ -170,7 +169,7 @@ def build_and_run_baseline_job():
 
     print("⚡ [3/3] Đang submit truy vấn Streaming SQL vào Flink Engine...")
     result = t_env.execute_sql(insert_sql)
-    
+
     try:
         job_client = result.get_job_client()
         if job_client:

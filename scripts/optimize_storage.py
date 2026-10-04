@@ -82,7 +82,7 @@ def benchmark_storage():
     size_mb_before = detail_before["sizeInBytes"] / (1024 * 1024)
     avg_file_size_before = size_mb_before / files_before if files_before > 0 else 0
 
-    print(f"📊 [Bảng fact_user_events]:")
+    print("📊 [Bảng fact_user_events]:")
     print(f"  - Số lượng file Parquet hiện tại : {files_before} files (phân mảnh nhỏ)")
     print(f"  - Tổng dung lượng               : {size_mb_before:.2f} MB")
     print(f"  - Kích thước trung bình mỗi file : {avg_file_size_before:.2f} MB/file")
@@ -123,7 +123,7 @@ def benchmark_storage():
     size_mb_after = detail_after["sizeInBytes"] / (1024 * 1024)
     avg_file_size_after = size_mb_after / files_after if files_after > 0 else 0
 
-    print(f"📊 [Bảng fact_user_events sau khi Optimize]:")
+    print("📊 [Bảng fact_user_events sau khi Optimize]:")
     print(f"  - Số lượng file Parquet còn lại : {files_after} files (đã gom gọn gàng)")
     print(f"  - Kích thước trung bình mỗi file: {avg_file_size_after:.2f} MB/file")
 

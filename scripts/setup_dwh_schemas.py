@@ -23,7 +23,7 @@ Mục tiêu vận hành:
 ================================================================================
 """
 
-import sys
+import os
 import time
 import io
 import re
@@ -76,7 +76,7 @@ def create_schemas_and_tables(conn):
         cur.execute("CREATE SCHEMA IF NOT EXISTS bronze;")
         cur.execute("CREATE SCHEMA IF NOT EXISTS silver;")
         cur.execute("CREATE SCHEMA IF NOT EXISTS gold;")
-        
+
         # 2. Xóa các bảng cũ nếu đã tồn tại
         cur.execute("""
             DROP TABLE IF EXISTS gold.fact_user_events CASCADE;
@@ -215,7 +215,7 @@ def load_table_from_minio(conn, s3, lakehouse_path, target_table, columns, pk_co
     """Hàm helper đọc Parquet/Delta từ MinIO bằng PyArrow và COPY vào PostgreSQL qua copy_expert có khử trùng lặp PK."""
     dataset = ds.dataset(lakehouse_path, filesystem=s3, format="parquet", partitioning="hive")
     scanner = dataset.scanner(columns=columns, batch_size=50000)
-    
+
     total = 0
     seen_pks = set() if pk_col else None
     with conn.cursor() as cur:
@@ -229,10 +229,10 @@ def load_table_from_minio(conn, s3, lakehouse_path, target_table, columns, pk_co
                     if seen_pks is not None:
                         df = df[~df[pk_col].isin(seen_pks)]
                         seen_pks.update(df[pk_col])
-            
+
             if df.empty:
                 continue
-                
+
             buf = io.StringIO()
             df.to_csv(buf, index=False, header=False, sep="\t", na_rep="\\N")
             buf.seek(0)
@@ -257,15 +257,15 @@ def sync_data_from_lakehouse(conn):
 
     # 1. Nạp Bronze Toàn bộ (1,832,306 dòng thô ban đầu)
     print(" -> [1/7] Đang đồng bộ bronze.raw_events (Toàn bộ dữ liệu thô)...")
-    b_cols = ["event_time", "event_type", "product_id", "category_id", "category_code", 
+    b_cols = ["event_time", "event_type", "product_id", "category_id", "category_code",
               "brand", "price", "user_id", "user_session", "discount_percent"]
     n_bronze = load_table_from_minio(conn, s3, "ecommerce-lakehouse/bronze/raw_events", "bronze.raw_events", b_cols, limit=None)
     print(f"     -> Đã nạp {n_bronze:,} bản ghi vào bronze.raw_events.")
 
     # 2. Nạp Silver Toàn bộ (1,398,581 dòng sạch)
     print(" -> [2/7] Đang đồng bộ silver.stg_events (Toàn bộ dữ liệu sạch)...")
-    s_cols = ["event_timestamp", "date", "event_time", "event_type", "product_id", 
-              "category_id", "category_code", "category_level1", "brand", "price", 
+    s_cols = ["event_timestamp", "date", "event_time", "event_type", "product_id",
+              "category_id", "category_code", "category_level1", "brand", "price",
               "user_id", "user_session", "discount_percent"]
     n_silver = load_table_from_minio(conn, s3, "ecommerce-lakehouse/silver/stg_events", "silver.stg_events", s_cols, limit=None)
     print(f"     -> Đã nạp {n_silver:,} bản ghi vào silver.stg_events.")
@@ -353,17 +353,17 @@ def run_explain_analyze(conn, user_id, min_time, label):
         cur.execute(query, (user_id, min_time))
         lines = [r[0] for r in cur.fetchall()]
         plan_text = "\n".join(lines)
-        
+
     exec_time_match = re.search(r"Execution Time:\s+([0-9.]+)\s+ms", plan_text)
     cost_match = re.search(r"cost=([0-9.]+)\.\.([0-9.]+)", plan_text)
     buffers_match = re.search(r"Buffers:\s+([^,\n]+)", plan_text)
-    
+
     scan_type = "Sequential Scan (Seq Scan)"
     if "Bitmap Index Scan" in plan_text:
         scan_type = "Bitmap Index Scan (B-Tree)"
     elif "Index Scan" in plan_text:
         scan_type = "Index Scan (B-Tree)"
-        
+
     return {
         "label": label,
         "scan_type": scan_type,

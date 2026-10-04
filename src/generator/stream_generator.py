@@ -23,7 +23,7 @@ import argparse
 import logging
 from datetime import datetime, timedelta
 import yaml
-from confluent_kafka import Producer, KafkaError
+from confluent_kafka import Producer
 from confluent_kafka.admin import AdminClient, NewTopic
 
 # Thiết lập logging chuẩn hóa
@@ -438,7 +438,7 @@ class StreamDataGenerator:
         print(f"• Thời gian chạy phiên:             {elapsed:.1f} giây")
         print(f"• Tốc độ trung bình:                {avg_throughput:.1f} messages/giây")
         print(f"• Checkpoint lưu tại:               {self.checkpoint_file}")
-        print(f"• Quan sát trực quan tại:           http://localhost:8085 (Kafka UI)")
+        print("• Quan sát trực quan tại:           http://localhost:8085 (Kafka UI)")
         print("=" * 80 + "\n")
 
 

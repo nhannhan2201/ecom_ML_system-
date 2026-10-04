@@ -41,9 +41,6 @@ import time
 import logging
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
-from pyspark.sql.types import (
-    StructType, StructField, StringType, DoubleType, LongType, TimestampType
-)
 
 # Thiết lập logging chuẩn hóa
 logging.basicConfig(
@@ -59,7 +56,7 @@ def create_baseline_spark_session() -> SparkSession:
     Khởi tạo SparkSession ở chế độ BASELINE (Tắt toàn bộ cơ chế tối ưu).
     """
     logger.info(">>> Đang khởi tạo SparkSession chế độ BASELINE (TẮT TẤT CẢ TỐI ƯU)...")
-    
+
     minio_endpoint = os.environ.get("MINIO_ENDPOINT", "http://localhost:9000")
     minio_access_key = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
     minio_secret_key = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
@@ -109,7 +106,7 @@ def run_baseline_pipeline():
     """
     total_start_time = time.time()
     spark = create_baseline_spark_session()
-    
+
     minio_raw_base = "s3a://ecommerce-raw/batch"
     minio_output_baseline = "s3a://ecommerce-lakehouse/baseline"
 
@@ -157,11 +154,11 @@ def run_baseline_pipeline():
     duplicate_count = raw_count - approx_distinct_events
     duplicate_rate = (duplicate_count / raw_count) * 100
 
-    logger.warning(f" [VẤN ĐỀ OFFLINE DUPLICATE PHÁT HIỆN]:")
+    logger.warning(" [VẤN ĐỀ OFFLINE DUPLICATE PHÁT HIỆN]:")
     logger.warning(f"  - Tổng số bản ghi thô: {raw_count:,}")
     logger.warning(f"  - Số bản ghi duy nhất: {approx_distinct_events:,}")
     logger.warning(f"  - Số bản ghi trùng lặp (Duplicate rác): {duplicate_count:,} (~{duplicate_rate:.2f}%)")
-    logger.warning(f"  - BASELINE ACTION: Giữ nguyên toàn bộ duplicate trong pipeline, không lọc rác!")
+    logger.warning("  - BASELINE ACTION: Giữ nguyên toàn bộ duplicate trong pipeline, không lọc rác!")
 
     # --------------------------------------------------------------------------
     # BƯỚC 3: MINH HỌA VẤN ĐỀ HIGH CARDINALITY & SHUFFLE SPILL (DISK/MEMORY)
@@ -174,9 +171,9 @@ def run_baseline_pipeline():
     # Baseline thực hiện COUNT(DISTINCT category_id) và COUNT(DISTINCT user_session) trực tiếp
     # mà không rút gọn cấp 1 (level 1) và không dùng HyperLogLog (approx_count_distinct).
     # Với RAM 1GB và shuffle partitions 200, Spark buộc phải SPILL hash-table ra Disk!
-    
+
     logger.info(" Đang thực thi phép gom nhóm High Cardinality nặng (gây Shuffle Spill trên Spark UI)...")
-    
+
     high_card_agg = df_raw.groupBy("user_id").agg(
         F.count("event_type").alias("total_events"),
         F.countDistinct("category_id").alias("n_distinct_deep_categories"),
@@ -211,7 +208,7 @@ def run_baseline_pipeline():
         .withColumn("category_priority", F.when(F.col("category_code").like("electronics%"), "HIGH").otherwise("NORMAL"))
 
     logger.info(" Đang thực hiện Shuffle Join trên key bị Skew (category_code) mà KHÔNG có AQE / Salting...")
-    
+
     # Thực hiện phép SortMergeJoin / ShuffleHashJoin trên category_code
     skewed_joined_df = df_raw.join(
         dim_categories,
@@ -239,7 +236,7 @@ def run_baseline_pipeline():
     step5_start = time.time()
 
     prediction_date = "2019-10-15"
-    
+
     # Tạo View tạm để query
     df_raw.createOrReplaceTempView("raw_events_baseline")
 
@@ -277,9 +274,9 @@ def run_baseline_pipeline():
     print(f" 1. Tổng thời gian chạy toàn bộ Baseline Job: {total_duration:.2f} giây")
     print(f" 2. Dữ liệu đầu vào: {raw_count:,} dòng (bao gồm {duplicate_count:,} dòng rác trùng lặp)")
     print(f" 3. Vấn đề Duplicate: TỶ LỆ TRÙNG LẶP = {duplicate_rate:.2f}% (Chưa được xử lý)")
-    print(f" 4. Vấn đề Schema Evolution: Cột 'discount_percent' bị thiếu trong nửa đầu dữ liệu")
-    print(f" 5. Vấn đề High Cardinality: COUNT(DISTINCT category_id) gây Shuffle Spill Memory & Disk")
-    print(f" 6. Vấn đề Data Skew: Key 'electronics.smartphone' gây Task Straggler nghẽn Stage")
+    print(" 4. Vấn đề Schema Evolution: Cột 'discount_percent' bị thiếu trong nửa đầu dữ liệu")
+    print(" 5. Vấn đề High Cardinality: COUNT(DISTINCT category_id) gây Shuffle Spill Memory & Disk")
+    print(" 6. Vấn đề Data Skew: Key 'electronics.smartphone' gây Task Straggler nghẽn Stage")
     print("="*80)
     print("\n HƯỚNG DẪN CHỤP MINH CHỨNG SPARK UI CHO RUBRIC (PORT 4040):")
     print("  * Bước 1: Mở trình duyệt truy cập: http://localhost:4040")

@@ -18,12 +18,10 @@ Cách sử dụng:
 ================================================================================
 """
 
-import sys
 import argparse
 import json
 from pyarrow.fs import S3FileSystem
 import pyarrow.dataset as ds
-import pyarrow.json as paj
 
 import os
 
@@ -130,7 +128,7 @@ def inspect_table(key_or_name, limit=5):
     if key_or_name.lower() in TABLE_MAP:
         target_path = TABLE_MAP[key_or_name.lower()]
     elif key_or_name.lower() in ["staging", "stream_events"]:
-        print(f"\n📂 KIỂM TRA FLINK RAW STAGING: s3://ecommerce-raw/staging/stream_events/")
+        print("\n📂 KIỂM TRA FLINK RAW STAGING: s3://ecommerce-raw/staging/stream_events/")
         sample = list(open_staging_sample(limit))
         print(f"🔍 Mẫu {len(sample)} sự kiện thô đầu tiên:")
         for idx, row in enumerate(sample, 1):
@@ -147,7 +145,7 @@ def inspect_table(key_or_name, limit=5):
         print("   " + ", ".join(TABLE_MAP.keys()) + ", staging")
         return
 
-    print(f"\n" + "=" * 80)
+    print("\n" + "=" * 80)
     print(f" 🔍 CHI TIẾT BẢNG: {target_path}")
     print("=" * 80)
     try:

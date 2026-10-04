@@ -61,7 +61,7 @@ def validate_data_quality(**context):
     # Lấy kết quả từ task trước thông qua cơ chế XCom của Airflow
     ti = context["ti"]
     record_count = ti.xcom_pull(task_ids="task_2_extract_sample_data")
-    
+
     print(f"📊 Nhận được {record_count} bản ghi từ bước Ingestion.")
     assert record_count > 0, "❌ Lỗi: Không có dữ liệu để xử lý!"
     print("✅ Kiểm tra Data Contract: Không có giá trị NULL, kiểu dữ liệu hợp lệ!")

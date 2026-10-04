@@ -10,13 +10,11 @@ Các nguyên tắc quan trọng:
 """
 
 import os
-import sys
 import time
 import argparse
 import pandas as pd
 import pyarrow.parquet as pq
 import s3fs
-from datetime import datetime, timezone
 from feast import FeatureStore
 
 # Thiết lập biến môi trường kết nối MinIO & Redis
@@ -53,21 +51,21 @@ def load_user_labels(limit: int = None, sample_fraction: float = None) -> pd.Dat
     fs = get_s3_filesystem()
     label_path = "ecommerce-lakehouse/gold/user_labels/date=2019-10-26/"
     print(f"📖 Đang đọc bảng nhãn Ground Truth từ: s3://{label_path}")
-    
+
     table = pq.read_table(label_path, filesystem=fs)
     df_labels = table.to_pandas()
-    
+
     if sample_fraction and 0 < sample_fraction < 1.0:
         df_labels = df_labels.sample(frac=sample_fraction, random_state=42)
     elif limit and limit > 0:
         df_labels = df_labels.head(limit)
-        
+
     # Chuẩn hóa cột thời gian cho Feast AS-OF Join
     df_labels["prediction_timestamp"] = pd.to_datetime(df_labels["prediction_timestamp"], utc=True)
     df_labels["event_timestamp"] = df_labels["prediction_timestamp"]
     df_labels["user_id"] = df_labels["user_id"].astype("int64")
     df_labels["target_purchase_1h"] = df_labels["target_purchase_1h"].astype("int32")
-    
+
     print(f"✅ Đã tải {len(df_labels):,} dòng nhãn (Positive rate: {(df_labels['target_purchase_1h'] == 1).mean():.2%})")
     return df_labels
 
@@ -76,17 +74,17 @@ def build_training_dataset(limit: int = 5000, output_path: str = None) -> pd.Dat
     """Thực hiện AS-OF Join giữa bảng nhãn và Feature Store để sinh Training Dataset."""
     repo_path = os.path.dirname(os.path.abspath(__file__))
     store = FeatureStore(repo_path=repo_path)
-    
+
     print("=" * 80)
     print("🚀 [FEAST HISTORICAL RETRIEVAL]: AS-OF POINT-IN-TIME JOIN CHO HUẤN LUYỆN MODEL")
     print("=" * 80)
     print(f"📁 Feast Repo : {repo_path}")
-    print(f"🎯 Target     : Ghép bảng nhãn với 9 Features (5 Batch + 4 Stream)")
+    print("🎯 Target     : Ghép bảng nhãn với 9 Features (5 Batch + 4 Stream)")
     print("-" * 80)
-    
+
     # 1. Đọc bảng nhãn
     df_labels = load_user_labels(limit=limit)
-    
+
     # 2. Danh sách features cần ghép
     features_to_fetch = [
         # Nhóm Offline Batch Features (30 ngày)
@@ -101,11 +99,11 @@ def build_training_dataset(limit: int = 5000, output_path: str = None) -> pd.Dat
         "user_stream_features_15m:f_purchases_15m",
         "user_stream_features_15m:total_spend_15m",
     ]
-    
+
     # 3. Thực thi Point-in-Time Join
-    print(f"⏳ Đang thực hiện AS-OF Join trên Feast Offline Store...")
+    print("⏳ Đang thực hiện AS-OF Join trên Feast Offline Store...")
     start_time = time.time()
-    
+
     training_data = store.get_historical_features(
         entity_df=df_labels,
         features=features_to_fetch,
@@ -114,7 +112,7 @@ def build_training_dataset(limit: int = 5000, output_path: str = None) -> pd.Dat
     duration = time.time() - start_time
     print(f"✅ AS-OF Join hoàn tất trong: {duration:.2f} giây! Kích thước: {df_train.shape}")
     print("-" * 80)
-    
+
     # 4. Xử lý giá trị Missing (Imputation)
     feature_cols = [
         "f_views_30d", "f_carts_30d", "f_purchases_30d", "f_spend_30d", "f_distinct_categories_30d",
@@ -123,7 +121,7 @@ def build_training_dataset(limit: int = 5000, output_path: str = None) -> pd.Dat
     for col in feature_cols:
         if col in df_train.columns:
             df_train[col] = df_train[col].fillna(0)
-            
+
     # 5. Đánh giá chất lượng Dataset
     pos_count = (df_train["target_purchase_1h"] == 1).sum()
     neg_count = (df_train["target_purchase_1h"] == 0).sum()
@@ -136,13 +134,13 @@ def build_training_dataset(limit: int = 5000, output_path: str = None) -> pd.Dat
     display_cols = ["user_id", "prediction_timestamp", "target_purchase_1h"] + feature_cols[:5]
     print(df_train[display_cols].head(5).to_string(index=False))
     print("-" * 80)
-    
+
     # 6. Lưu file Parquet nếu có yêu cầu
     if output_path:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         df_train.to_parquet(output_path, index=False)
         print(f"💾 Đã lưu Training Dataset vào: {output_path}")
-        
+
     print("=" * 80)
     return df_train
 
@@ -153,7 +151,7 @@ def main():
     parser.add_argument("--limit", type=int, default=5000, help="Số lượng dòng nhãn cần join (mặc định: 5000, 0 = toàn bộ)")
     parser.add_argument("--output", type=str, default="feature_store/data/training_dataset.parquet", help="Đường dẫn lưu file Parquet")
     args = parser.parse_args()
-    
+
     build_training_dataset(limit=args.limit if args.limit > 0 else None, output_path=args.output)
 
 

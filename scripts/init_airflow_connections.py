@@ -5,7 +5,6 @@ and shared variables are registered inside Airflow metadata database.
 """
 
 import os
-import sys
 import json
 from airflow import settings
 from airflow.models import Connection, Variable

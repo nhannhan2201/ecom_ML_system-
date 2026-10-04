@@ -10,12 +10,10 @@ Nhiệm vụ:
 """
 
 import os
-import sys
 import time
 import argparse
 import s3fs
 import pyarrow.parquet as pq
-import pandas as pd
 
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.emitter.mcp import MetadataChangeProposalWrapper

@@ -15,7 +15,6 @@ MỤC TIÊU:
 """
 
 import os
-import sys
 from pyflink.datastream import StreamExecutionEnvironment
 from pyflink.table import StreamTableEnvironment
 
@@ -47,9 +46,9 @@ def run_quickstart():
     t_env = StreamTableEnvironment.create(env)
 
     # 4. Định nghĩa bảng Source đọc từ Kafka
-    # Lưu ý chuẩn Lab 10: 
+    # Lưu ý chuẩn Lab 10:
     # Cột 'event_time' trong JSON có đuôi ' UTC' (ví dụ: '2019-10-26 00:00:01 UTC').
-    # Ta dùng SUBSTRING(event_time, 1, 19) để cắt lấy '2019-10-26 00:00:01' 
+    # Ta dùng SUBSTRING(event_time, 1, 19) để cắt lấy '2019-10-26 00:00:01'
     # và chuyển sang kiểu TIMESTAMP chuẩn làm Event-Time gán Watermark!
     create_source_table_sql = f"""
         CREATE TABLE ecommerce_events_source (
@@ -93,7 +92,7 @@ def run_quickstart():
 
     print("⚡ Bắt đầu thực thi câu truy vấn Streaming SQL và in kết quả ra màn hình...")
     result_table = t_env.sql_query(query_sql)
-    
+
     # In kết quả realtime trực tiếp ra Terminal
     result_table.execute().print()
 

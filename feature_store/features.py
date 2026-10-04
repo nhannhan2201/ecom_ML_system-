@@ -18,7 +18,6 @@ from feast import (
     FeatureService,
     ValueType,
 )
-from feast.data_source import PushMode
 from feast.types import Int64, Float64
 
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "http://localhost:9000")

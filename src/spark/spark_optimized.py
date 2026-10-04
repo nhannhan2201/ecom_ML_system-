@@ -41,9 +41,6 @@ os.environ["PYSPARK_DRIVER_PYTHON"] = sys.executable
 from pyspark.sql import SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
-from pyspark.sql.types import (
-    StructType, StructField, StringType, DoubleType, LongType, TimestampType, IntegerType, BooleanType
-)
 
 # Thiết lập logging chuẩn hóa
 logging.basicConfig(
@@ -70,7 +67,8 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
 
     # Java URI standard does not allow underscores in hostname (e.g. ecom_minio causes URI.getHost() to return null)
     # Resolve hostname with underscore to its IP address to ensure 100% Java & AWS SDK compatibility
-    import urllib.parse, socket
+    import urllib.parse
+    import socket
     try:
         parsed = urllib.parse.urlparse(minio_endpoint)
         if parsed.hostname and "_" in parsed.hostname:
@@ -87,48 +85,48 @@ def create_optimized_spark_session(minio_endpoint: str = None) -> SparkSession:
         raise ValueError("Missing required environment variable: 'MINIO_SECRET_KEY' (or 'AWS_SECRET_ACCESS_KEY')")
 
     logger.info(f">>> Đang khởi tạo SparkSession chế độ OPTIMIZED (MinIO endpoint: {minio_endpoint})...")
-    
+
     spark = (
         SparkSession.builder
         .appName("ECom-Lakehouse-Pipeline-Optimized")
         .master("local[*]")
-        
+
         # 1. CẤU HÌNH TÀI NGUYÊN (RESOURCE CONFIGURATION)
         .config("spark.driver.memory", "3g")
         .config("spark.executor.memory", "3g")
-        
+
         # 2. BẬT ADAPTIVE QUERY EXECUTION (AQE) - TIÊU CHÍ 2 (SKEW JOIN)
         .config("spark.sql.adaptive.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.enabled", "true")
         .config("spark.sql.adaptive.skewJoin.skewedPartitionFactor", "2")
         .config("spark.sql.adaptive.skewJoin.skewedPartitionThresholdInBytes", "16MB")
-        
+
         # 3. TỐI ƯU SHUFFLE PARTITIONS
         .config("spark.sql.shuffle.partitions", "12")
         .config("spark.sql.adaptive.coalescePartitions.enabled", "true")
         .config("spark.sql.adaptive.coalescePartitions.initialPartitionNum", "50")
-        
+
         # 4. TỐI ƯU BROADCAST HASH JOIN
         .config("spark.sql.autoBroadcastJoinThreshold", "64MB")
-        
+
         # 5. CẤU HÌNH DELTA LAKE & HADOOP S3A KẾT NỐI MINIO
         .config("spark.jars.packages", "io.delta:delta-spark_2.12:3.0.0,org.apache.hadoop:hadoop-aws:3.3.4")
         .config("spark.sql.extensions", "io.delta.sql.DeltaSparkSessionExtension")
         .config("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-        
+
         .config("spark.hadoop.fs.s3a.endpoint", minio_endpoint)
         .config("spark.hadoop.fs.s3a.access.key", minio_access_key)
         .config("spark.hadoop.fs.s3a.secret.key", minio_secret_key)
         .config("spark.hadoop.fs.s3a.path.style.access", "true")
         .config("spark.hadoop.fs.s3a.impl", "org.apache.hadoop.fs.S3AFileSystem" if False else "org.apache.hadoop.fs.s3a.S3AFileSystem")
         .config("spark.hadoop.fs.s3a.connection.ssl.enabled", "false")
-        
+
         # Bật Vacuum retention check bypass để dọn dẹp file cũ ngay lập tức
         .config("spark.databricks.delta.vacuum.parallelDelete.enabled", "true")
         .config("spark.databricks.delta.retentionDurationCheck.enabled", "false")
         .getOrCreate()
     )
-    
+
     spark.sparkContext.setLogLevel("WARN")
     logger.info(" SparkSession Optimized đã khởi tạo thành công.")
     logger.info(" Spark UI đang lắng nghe tại: http://localhost:4040")
@@ -144,12 +142,12 @@ def archive_staging_files(spark, staging_path: str, archive_base_path: str):
         Path = spark._jvm.org.apache.hadoop.fs.Path
         staging_hadoop_path = Path(staging_path)
         fs = staging_hadoop_path.getFileSystem(conf)
-        
+
         if fs.exists(staging_hadoop_path):
             file_statuses = fs.listStatus(staging_hadoop_path)
             archived_count = 0
             archive_dir = Path(f"{archive_base_path}/{int(time.time())}")
-            
+
             for status in file_statuses:
                 file_path = status.getPath()
                 name = file_path.getName()
@@ -240,7 +238,7 @@ def run_dp1_bronze(spark: SparkSession, paths: dict, step: str = "all") -> dict:
                 )
                 df_staging_ingested.write.format("delta").mode("append").option("mergeSchema", "true").save(bronze_path)
                 logger.info("  -> Đã gộp thành công dữ liệu Flink Stream vào Bronze Delta Lake.")
-                
+
                 # Archive file staging để lần sau không đọc lại
                 archive_staging_files(spark, staging_stream_path, paths['archive_stream'])
         except Exception as e:
@@ -264,7 +262,7 @@ def run_dp1_bronze(spark: SparkSession, paths: dict, step: str = "all") -> dict:
         assert null_user_count == 0, f"❌ Lỗi Validate DP1: Phát hiện {null_user_count} bản ghi có user_id NULL!"
 
         dp1_duration = time.time() - dp1_start
-        logger.info(f"✅ [DP1 - VALIDATE THÀNH CÔNG]:")
+        logger.info("✅ [DP1 - VALIDATE THÀNH CÔNG]:")
         logger.info(f"  - Total Bronze Rows : {total_bronze_count:,} bản ghi")
         logger.info(f"  - Schema Contract   : 11/11 cột hợp nhất ({bronze_cols})")
         logger.info(f"  - Data Quality Check: 0 NULL user_id | Thời gian: {dp1_duration:.2f}s")
@@ -422,7 +420,7 @@ def run_dp2_silver_gold_dwh(spark: SparkSession, paths: dict, step: str = "all")
             )
         )
         fact_events.write.format("delta").mode("overwrite").option("overwriteSchema", "true").partitionBy("date").save(paths['gold_fact_events'])
-        
+
         # 5. STORAGE OPTIMIZATION (COMPACTION & Z-ORDERING & VACUUM - RUBRIC 2.0Đ)
         logger.info(">>> [DP2 - STORAGE OPTIMIZATION]: Thực thi OPTIMIZE & ZORDER BY (user_id) trên fact_user_events...")
         spark.sql(f"OPTIMIZE delta.`{paths['gold_fact_events']}` ZORDER BY (user_id)")
@@ -459,10 +457,10 @@ def run_dp2_silver_gold_dwh(spark: SparkSession, paths: dict, step: str = "all")
         assert not has_product_id, "❌ Lỗi Validate DP2: Vi phạm chuẩn Pure Fact! Vẫn còn tồn tại cột product_id trong fact_user_events!"
 
         dp2_duration = time.time() - dp2_start
-        logger.info(f"✅ [DP2 - VALIDATE THÀNH CÔNG]:")
+        logger.info("✅ [DP2 - VALIDATE THÀNH CÔNG]:")
         logger.info(f"  - Silver Clean Rows : {clean_count:,} bản ghi (0.00% duplicate)")
         logger.info(f"  - dim_product (SCD2): {dim_p_count:,} bản ghi")
-        logger.info(f"  - Pure Fact Contract: Các bản ghi có product_sk | product_id đã loại bỏ hoàn toàn")
+        logger.info("  - Pure Fact Contract: Các bản ghi có product_sk | product_id đã loại bỏ hoàn toàn")
         logger.info(f"  - Storage Optimize  : Z-Order (user_id) kích hoạt Data Skipping | Thời gian: {dp2_duration:.2f}s")
 
         return {
@@ -605,7 +603,7 @@ def run_dp3_features_labels(spark: SparkSession, paths: dict, step: str = "all",
         assert invalid_target_count == 0, f"❌ Lỗi Validate DP3: Nhãn target_purchase_1h chứa {invalid_target_count} giá trị ngoài [0, 1]!"
 
         dp3_duration = time.time() - dp3_start
-        logger.info(f"✅ [DP3 - VALIDATE THÀNH CÔNG]:")
+        logger.info("✅ [DP3 - VALIDATE THÀNH CÔNG]:")
         logger.info(f"  - feat_user_30d Rows: {feat_30d_count:,} users (Chuẩn Feast: event_timestamp, created)")
         logger.info(f"  - user_labels Rows  : {labels_count:,} observations (nhãn nhị phân [0, 1])")
         logger.info(f"  - Storage Optimize  : Z-Order (user_id) kích hoạt Data Skipping | Thời gian: {dp3_duration:.2f}s")

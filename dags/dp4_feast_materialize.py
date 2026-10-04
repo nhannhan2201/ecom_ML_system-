@@ -15,7 +15,7 @@ MỤC TIÊU VẬN HÀNH AIRFLOW ORCHESTRATION & FEAST:
 
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import timedelta
 import pendulum
 from airflow import DAG
 from airflow.models import Variable

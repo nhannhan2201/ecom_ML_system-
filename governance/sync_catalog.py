@@ -10,10 +10,8 @@ Nhiệm vụ:
 """
 
 import os
-import sys
 import time
 import argparse
-from typing import List
 
 from datahub.emitter.rest_emitter import DatahubRestEmitter
 from datahub.emitter.mcp import MetadataChangeProposalWrapper
@@ -21,13 +19,10 @@ from datahub.metadata.schema_classes import (
     # Dataset Metadata
     DatasetPropertiesClass,
     AuditStampClass,
-    OwnerClass,
-    OwnershipClass,
-    OwnershipTypeClass,
     GlobalTagsClass,
     TagAssociationClass,
     DomainsClass,
-    
+
     # Schema Metadata
     SchemaMetadataClass,
     SchemaFieldClass,
@@ -37,12 +32,12 @@ from datahub.metadata.schema_classes import (
     TimeTypeClass,
     BooleanTypeClass,
     OtherSchemaClass,
-    
+
     # Lineage
     UpstreamLineageClass,
     UpstreamClass,
     DatasetLineageTypeClass,
-    
+
     # Assertions & Data Contracts
     AssertionInfoClass,
     AssertionTypeClass,
@@ -60,8 +55,7 @@ from datahub.metadata.schema_classes import (
 
 # Import Declarative Catalog
 from catalog import (
-    DATASETS, DATA_PRODUCTS, DatasetSpec, SchemaFieldSpec, AssertionSpec,
-    RAW_BATCH_URN, RAW_STAGING_STREAM_URN, BRONZE_URN, SILVER_URN,
+    DATASETS, DATA_PRODUCTS, RAW_BATCH_URN, RAW_STAGING_STREAM_URN, BRONZE_URN, SILVER_URN,
     GOLD_DIM_PROD_URN, GOLD_DIM_USER_URN, GOLD_FACT_EVENTS_URN,
     GOLD_FEAT_30D_URN, GOLD_USER_LABELS_URN
 )
@@ -148,7 +142,7 @@ def sync_datahub_catalog(gms_url: str = "http://localhost:8089"):
                 isPartOfKey=f.is_primary_key,
                 nullable=f.nullable,
             ))
-        
+
         schema_metadata = SchemaMetadataClass(
             schemaName=spec.name,
             platform=f"urn:li:dataPlatform:{spec.platform}",
@@ -215,7 +209,7 @@ def sync_datahub_catalog(gms_url: str = "http://localhost:8089"):
             ))
             contracts_count += 1
 
-    
+
     # 7. Đồng bộ Airflow Pipelines & Tasks (Đảm bảo Lineage Task chuẩn xác)
     flow_dp1 = "urn:li:dataFlow:(airflow,dp1_raw_to_bronze,PROD)"
     emitter.emit(MetadataChangeProposalWrapper(entityUrn=flow_dp1, aspect=DataFlowInfoClass(name="dp1_raw_to_bronze", description="Pipeline DP1: Ingest Raw Data vào Bronze Delta Lake")))
@@ -251,7 +245,7 @@ def sync_datahub_catalog(gms_url: str = "http://localhost:8089"):
     print(f"   • Tổng số Assertions đăng ký : {assertions_count}")
     print(f"   • Tổng số Data Contracts     : {contracts_count}")
     print("=" * 80)
-    print(f"👉 Mở ngay DataHub UI để xem phả hệ hoàn chỉnh: http://localhost:9002")
+    print("👉 Mở ngay DataHub UI để xem phả hệ hoàn chỉnh: http://localhost:9002")
 
 
 def main():
