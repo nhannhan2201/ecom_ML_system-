@@ -21,8 +21,8 @@ Read the [project documentation map](INDEX.md) in order. The central references 
 | --- | --- |
 | `rubic/` | Coursework workbooks |
 | `config/` | Generator and system configuration |
-| `src/generator/` | Retained M1 batch generator |
+| `src/generator/` | Retained Batch Generator batch generator |
 | `tests/` | Unit, property and structure tests |
 | `docs/` | Component explanations and new evidence after verification |
 
-`Makefile` and old pipeline jobs were removed. Run M1 with `python -m pytest tests/test_batch_selection_m1.py -q`; tests verify code-level properties only; they do not prove that external services or data pipelines completed successfully. The retained generator can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.
+`Makefile` and old pipeline jobs were removed. Run Batch Generator with `python -m pytest tests/test_batch_generator.py -q`; tests verify code-level properties only; they do not prove that external services or data pipelines completed successfully. The retained generator can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.

@@ -1,4 +1,4 @@
-"""M1 only: classification and sampling, plus isolated transformation handoff."""
+"""Batch Generator only: classification and sampling, plus isolated transformation handoff."""
 from pathlib import Path
 import json
 
@@ -7,7 +7,7 @@ import pytest
 
 from src.generator.batch_generator import BatchDataGenerator, CANONICAL_9_COLUMNS, CANONICAL_10_COLUMNS
 
-FIXTURE = Path(__file__).parent / "fixtures/m1_october_boundaries.csv.fixture"
+FIXTURE = Path(__file__).parent / "fixtures/batch_generator_october_boundaries.csv.fixture"
 EXPECTED = ["NEW", "EXCLUDED", "OLD", "OLD", "EXCLUDED", "NEW", "OLD", "INVALID",
             "NEW", "NEW", "OLD", "NEW"]
 

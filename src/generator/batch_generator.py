@@ -170,7 +170,7 @@ class BatchDataGenerator:
         if not self.batch_start < self.evolution_timestamp < self.batch_end:
             raise ValueError("batch boundaries must satisfy start < effective < end")
         if not evolution.get("enabled") or evolution.get("new_column") != "discount_percent":
-            raise ValueError("M1 requires enabled schema evolution with discount_percent")
+            raise ValueError("Batch Generator requires enabled schema evolution with discount_percent")
 
     def _classify_chunk(self, chunk: pd.DataFrame) -> pd.Series:
         """Return one classification per row without modifying its source values."""

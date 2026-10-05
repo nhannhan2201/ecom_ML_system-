@@ -1,4 +1,4 @@
-# M1 — October batch selection and small local readback
+# Batch Generator — October batch selection and small local readback
 
 Cleanup baseline: evidence JSON/log và script readback cũ đã được dọn. Số liệu runtime dưới đây là lịch sử, không phải evidence còn sẵn hay lần chạy mới.
 
@@ -6,7 +6,7 @@ Ngày kiểm chứng: 2026-10-05, khoảng 08:09–08:12 Asia/Ho_Chi_Minh. Runti
 
 ## Purpose and contract
 
-October is historical batch; November is the intended stream source (stream code removed from rebuild baseline). M1 checks only source selection and handoff to existing transformations:
+October is historical batch; November is the intended stream source (stream code removed from rebuild baseline). Batch Generator checks only source selection and handoff to existing transformations:
 
 ```text
 BATCH = [2019-10-01T00:00:00Z, 2019-11-01T00:00:00Z)
@@ -33,22 +33,22 @@ Arrows describe inspected source; fixture and local small path below have eviden
 
 - [Generator](../src/generator/batch_generator.py): `_load_batch_boundaries` validates explicit UTC config and `start < effective < end`; `_classify_chunk` returns labels without changing source data; `_iter_classified_chunks` reads and counts; `_sample_classified_rows` samples; `run_sample_mode` hands selected rows to existing transformation and writer. Benchmark selection now uses the same classifier, with no schema row offset or separate date constants.
 - [Config](../config/generator_config.yaml): one start/end/evolution timestamp, one small sample size, existing base seed. Old date fields and duplicated top-level sample size removed.
-- [Tests](../tests/test_batch_selection_m1.py), [fixture](../tests/fixtures/m1_october_boundaries.csv.fixture); independent readback script was removed during cleanup.
+- [Tests](../tests/test_batch_generator.py), [fixture](../tests/fixtures/batch_generator_october_boundaries.csv.fixture); independent readback script was removed during cleanup.
 - `--local-output-dir` disables MinIO and writes CSV/manifest in the specified directory. Existing upload behavior remains available without this argument.
 
 Random-priority reservoirs retain the highest random priorities per schema, using independent seeds derived from base_seed. Quotas are floor(N/2) OLD and remainder NEW. Each valid source row is a candidate only for its own population. Same source order/config/seed gives repeatable selection; reordered source may yield different sampled identities but cannot change membership. Short populations return fewer rows, without duplicate backfill or quota transfer. Memory is bounded by sample plus a source chunk; source scanning is still required. Missing/invalid config raises; structural CSV errors raise rather than being silently skipped.
 
 ## UNIT-VERIFIED
 
-Commands:
+Commands (retained test paths use the new functional names; recorded results below are historical):
 
 ```bash
-python -m pytest tests/test_batch_selection_m1.py -q -s
-python -m pytest tests/test_batch_selection_m1.py -q
+python -m pytest tests/test_batch_generator.py -q -s
+python -m pytest tests/test_batch_generator.py -q
 python -m pytest tests/test_generator.py -q -k 'schema_evolution_part or seed_sequence_reproducibility'
 ```
 
-M1 suite: 9 passed; final run after fixture rename: 9 passed in 1.68s. Existing related schema/seed tests: 3 passed, 15 deselected. These do not establish pipeline or scale success.
+Batch Generator suite: 9 passed; final run after fixture rename: 9 passed in 1.68s. Existing related schema/seed tests: 3 passed, 15 deselected. These do not establish pipeline or scale success.
 
 Fixture is intentionally unsorted. Actual boundary readback from the test:
 
@@ -71,6 +71,8 @@ Reconciliation: 12 input = 4 OLD + 5 NEW + 2 EXCLUDED + 1 INVALID. OLD ∩ NEW i
 
 ## Historical small runtime — artifacts removed
 
+The following commands preserve historical removed script/temp paths; they are not current instructions.
+
 Input: project-root `2019-Oct.csv`, readable, 5,668,612,855 bytes; source header matches nine expected columns. No source file modifications or MinIO writes.
 
 ```bash
@@ -89,7 +91,7 @@ Both commands exited 0. Generator reported 170.64s for this local run; this is a
 | Schema | Original nine columns | Nine + discount_percent |
 | Wrong membership rows | 0 | 0 |
 
-Independent output parser checks all timestamps against the frozen boundaries and exact column order. The 20 extra rows come from existing duplicate transformation; M1 records output counts but does not certify duplicate/skew/discount distribution correctness.
+Independent output parser checks all timestamps against the frozen boundaries and exact column order. The 20 extra rows come from existing duplicate transformation; Batch Generator records output counts but does not certify duplicate/skew/discount distribution correctness.
 
 Evidence JSON/manifest/log và script readback đã được dọn. Không dựa vào output tạm cũ để xác nhận runtime hiện tại. Bản trước cleanup được lưu tại `old-vibe-backup` (`2cf00cf`).
 
@@ -97,4 +99,4 @@ Evidence JSON/manifest/log và script readback đã được dọn. Không dựa
 
 Full October **output**, medium/full scale, replication, MinIO delivery and downstream systems remain NOT YET VERIFIED. Reading all October input for reservoir sampling is not a full-output run. No rubric criterion was marked complete from these results.
 
-For a wrong schema row, inspect parsed timestamp and `_classify_chunk` before sampling; compare source classification counts with selected counts and then output counts. For a short sample, inspect population/quota warnings. For malformed source time, inspect INVALID count. For local output issues, inspect manifest and independently verify output; the old readback script is no longer present. M1 stopped after Level 2 for learner review; no M2 work.
+For a wrong schema row, inspect parsed timestamp and `_classify_chunk` before sampling; compare source classification counts with selected counts and then output counts. For a short sample, inspect population/quota warnings. For malformed source time, inspect INVALID count. For local output issues, inspect manifest and independently verify output; the old readback script is no longer present. Batch Generator stopped after Level 2 for learner review; no Batch Generator — schema and deterministic fields work.

@@ -2,7 +2,7 @@
 
 ## Purpose and status
 
-This file is the source of truth for dataset meaning, grain, keys, timestamps, and intended ownership. It separates **CURRENT** (what the repository source/config declares) from **TARGET** (the agreed 15-minute purchase-propensity design). A source declaration proves only that code/config exists. Runtime claims require named readback evidence. M1 now has a [small local batch readback](docs/m1_batch_selection.md); delivery guarantees, downstream pipelines and full-scale output remain **unverified**.
+This file is the source of truth for dataset meaning, grain, keys, timestamps, and intended ownership. It separates **CURRENT** (what the repository source/config declares) from **TARGET** (the agreed 15-minute purchase-propensity design). A source declaration proves only that code/config exists. Runtime claims require named readback evidence. Batch Generator now has a [small local batch readback](docs/batch_generator.md); delivery guarantees, downstream pipelines and full-scale output remain **unverified**.
 
 Related documents: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) describes the intended system; [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) maps source connections; [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) tracks work; [RUBRIC.md](RUBRIC.md) tracks workbook criteria.
 
@@ -79,7 +79,7 @@ Types below describe source declarations and transformations, not a runtime read
 - **Producer:** batch generator (`src/generator/batch_generator.py`), config `config/generator_config.yaml`.
 - **Consumers:** Spark DP1 in `src/spark/spark_optimized.py`; the Airflow DP1 DAG invokes that stage.
 - **Physical location:** `s3://ecommerce-raw/batch/raw_events_old.csv` and `s3://ecommerce-raw/batch/raw_events_new.csv`; large mode may emit part files. Small mode also writes local output as defined by the generator.
-- **Schema:** old part contains the nine source columns through `user_session`; new part adds `discount_percent`. CSV columns are textual on disk; Spark casts IDs to BIGINT and price to DOUBLE. Config defines UTC BATCH `[2019-10-01,2019-11-01)`, OLD `[2019-10-01,2019-10-16)` and NEW `[2019-10-16,2019-11-01)`. The shared classifier parses event_time before sampling; row position never determines schema membership. Small mode uses independently seeded random-priority reservoirs, quotas floor(N/2) OLD and remainder NEW. A short population is returned without duplication or quota transfer. INVALID and EXCLUDED counts are logged and persisted in the small manifest. [M1 evidence](docs/m1_batch_selection.md) verifies fixture boundaries and local 1,000-source-row sample readback (510 output rows per group after existing transformation); MinIO delivery and full October output remain NOT YET VERIFIED.
+- **Schema:** old part contains the nine source columns through `user_session`; new part adds `discount_percent`. CSV columns are textual on disk; Spark casts IDs to BIGINT and price to DOUBLE. Config defines UTC BATCH `[2019-10-01,2019-11-01)`, OLD `[2019-10-01,2019-10-16)` and NEW `[2019-10-16,2019-11-01)`. The shared classifier parses event_time before sampling; row position never determines schema membership. Small mode uses independently seeded random-priority reservoirs, quotas floor(N/2) OLD and remainder NEW. A short population is returned without duplication or quota transfer. INVALID and EXCLUDED counts are logged and persisted in the small manifest. [Batch Generator evidence](docs/batch_generator.md) verifies fixture boundaries and local 1,000-source-row sample readback (510 output rows per group after existing transformation); MinIO delivery and full October output remain NOT YET VERIFIED.
 - **Key/timestamps:** no enforced key; no separate ingestion timestamp in CSV. Event timestamp is source `event_time`.
 
 ### Stream event record and Kafka topic — CURRENT
@@ -192,7 +192,7 @@ Training rows must join by `prediction_id`, include the exact features used, and
 
 | Concern | CURRENT source declaration | TARGET contract | Status |
 | --- | --- | --- | --- |
-| Batch source | October CSV; parsed UTC classification then deterministic per-schema sampling; shared classifier in benchmark | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([M1](docs/m1_batch_selection.md)); full output/MinIO/November stream NOT YET VERIFIED |
+| Batch source | October CSV; parsed UTC classification then deterministic per-schema sampling; shared classifier in benchmark | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([Batch Generator](docs/batch_generator.md)); full output/MinIO/November stream NOT YET VERIFIED |
 | Event identity/dedup | Composite field subset, no stable event id | Explicit source/event identity or documented conservative dedup rule | PARTIAL |
 | Durable event history | Raw CSV, Bronze Delta, Silver Delta; Flink writes stream staging separately | Preserve accepted source events independently of lossy features | IMPLEMENTED IN SOURCE / runtime unverified |
 | 15m feature semantics | Flink hopping window; Spark path currently computes 30d | Four identical per-user windows with same event-time, boundary and late availability semantics | PARTIAL |
@@ -228,7 +228,7 @@ The stream's raw-event staging branch preserves event details for later history/
 
 ## Known contract gaps to resolve in implementation milestones
 
-1. M1 verifies batch classification/sampling and a small local output; full-output/scale behavior and the stream source/date mismatch remain unverified. See [M1](docs/m1_batch_selection.md).
+1. Batch Generator verifies batch classification/sampling and a small local output; full-output/scale behavior and the stream source/date mismatch remain unverified. See [Batch Generator](docs/batch_generator.md).
 2. Choose a stable event identity/dedup policy; current composite dedup can merge distinct events and fact hash omits event type.
 3. Align Spark historical and Flink realtime 15m feature definitions, timestamp field, watermark/late-data availability policy, and output keys.
 4. Decide whether prediction is minute-scheduled, event-triggered with minute bucketing, or another policy; keep training availability semantics identical to inference.
