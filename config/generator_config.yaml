@@ -36,13 +36,10 @@ batch_generator:
     id_offset: 1000000000    # Độ dịch chuyển ID xác định: user_id' = user_id + r * id_offset
     price_jitter_pct: 5      # Dao động giá ±5% theo product để tạo phiên bản SCD2
 
-  # Quy mô mẫu lấy để kiểm thử (đặt null hoặc 0 nếu muốn chạy toàn bộ 42.4 triệu dòng)
-  sample_size: 1000000
-
-  # Khoảng thời gian cho luồng Batch (từ ngày 01 đến ngày 25 của tháng 10/2019)
+  # UTC batch interval: inclusive start, exclusive end (full October)
   date_range:
-    start_date: "2019-10-01"
-    end_date: "2019-10-25"
+    start_timestamp: "2019-10-01T00:00:00Z"
+    end_timestamp: "2019-11-01T00:00:00Z"
 
   # Đặc trưng tự nhiên được tận dụng trực tiếp từ REES46 (không cần can thiệp giả tạo)
   natural_characteristics:
@@ -69,7 +66,7 @@ batch_generator:
     schema_evolution:
       enabled: true
       new_column: "discount_percent"
-      effective_date: "2019-10-16"  # Từ ngày 16/10 mới có cột này, trước đó mang giá trị NULL
+      effective_timestamp: "2019-10-16T00:00:00Z"  # Inclusive start of V2
       discount_values: [4, 5, 8, 10, 12]  # Tỷ lệ giảm giá ngẫu nhiên (%)
 
     # Tùy chọn 3: Synthetic Skew Injection (Opt-in bổ sung ngoài skew tự nhiên)
@@ -92,7 +89,7 @@ batch_generator:
     endpoint_url: "http://localhost:9000"
     bucket_name: "ecommerce-raw"
     part1_object_name: "batch/raw_events_old.csv"  # 01/10 -> 15/10: 9 cột (chưa có discount_percent)
-    part2_object_name: "batch/raw_events_new.csv"  # 16/10 -> 25/10: 10 cột (đã thêm discount_percent)
+    part2_object_name: "batch/raw_events_new.csv"  # 16/10 -> 31/10: 10 cột (đã thêm discount_percent)
 
 # ------------------------------------------------------------------------------
 # 2. CẤU HÌNH CHO STREAMING DATA GENERATOR (Online Feeder - Rubric: 8 điểm)

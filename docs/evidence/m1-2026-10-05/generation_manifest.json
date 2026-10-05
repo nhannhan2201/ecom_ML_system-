@@ -1,0 +1,66 @@
+{
+  "timestamp": "2026-10-05T01:12:19.102262+00:00",
+  "mode": "small",
+  "sample_size": 1000,
+  "source_classification_counts": {
+    "OLD": 20442805,
+    "NEW": 22005959,
+    "EXCLUDED": 0,
+    "INVALID": 0
+  },
+  "selected_source_counts": {
+    "OLD": 500,
+    "NEW": 500
+  },
+  "total_rows": 1020,
+  "total_bytes": 138048,
+  "total_size_mb": 0.13,
+  "duplicate_rate_target": 0.02,
+  "duplicate_rows_injected": 20,
+  "duplicate_rate_actual": 1.9608,
+  "schema_evolution": {
+    "effective_date": "2019-10-16T00:00:00+00:00",
+    "part1_columns": [
+      "event_time",
+      "event_type",
+      "product_id",
+      "category_id",
+      "category_code",
+      "brand",
+      "price",
+      "user_id",
+      "user_session"
+    ],
+    "part2_columns": [
+      "event_time",
+      "event_type",
+      "product_id",
+      "category_id",
+      "category_code",
+      "brand",
+      "price",
+      "user_id",
+      "user_session",
+      "discount_percent"
+    ],
+    "new_column": "discount_percent"
+  },
+  "skew_config": {
+    "enabled": false,
+    "column": "user_id",
+    "top_k_keys": [
+      999999999,
+      888888888,
+      777777777
+    ],
+    "hot_ratio": 0.3,
+    "sessions_per_key": 50
+  },
+  "skew_actual": {},
+  "drift_config": {
+    "enabled": false,
+    "column": "price",
+    "drift_factor": 1.5
+  },
+  "stats_only": false
+}

@@ -37,19 +37,32 @@ Use Vietnamese and beginner-friendly language. Skip Novel Ideas. Preserve user c
 
 ## Current status
 
-- **Current milestone:** M1 — batch generator row selection and date boundaries. Start with explanation and a tiny fixture design; do not run a large generator.
+- **Current milestone:** M1 selection/sampling verified at unit and small local runtime levels on 2026-10-05; stopped for learner review. Do not start M2 automatically.
 - **Design:** four canonical 15-minute features predict at least one purchase during the following hour. See [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md).
 - **Contract:** the root [DATA_CONTRACT.md](DATA_CONTRACT.md) now records current source declarations and the target schema separately.
 - **Source audit:** root docs reorganized and current generator/Spark/Flink/Feast/DWH paths inspected. This was static inspection only; no pipeline/test was run in this documentation task.
-- **Verified runtime progress:** no new runtime verification recorded for this documentation task.
-- **Unresolved:** source CSV overlap/order/coverage; event identity and dedup rule; prediction eligibility/snapshot availability; watermark and late-data policy; Feast/DWH physical readback.
+- **Verified runtime progress:** [M1 small local batch readback](docs/m1_batch_selection.md): 1,000 selected source rows, 1,020 rows after existing transformation; all output timestamps/schema memberships pass. No MinIO/downstream/full-output verification.
+- **Unresolved:** November coverage/overlap and source-order audit (classification no longer assumes ordering); event identity and dedup rule; prediction eligibility/snapshot availability; watermark and late-data policy; Feast/DWH physical readback.
 
 ## Milestone log
 
-No code-learning milestone has been completed in the current roadmap. For the next completed milestone, add one concise entry here with:
+M1 record is below. For later milestones, use the same concise record format:
 
 - **What I can now explain:** component purpose and its place in the full data flow.
 - **Change and reason:** exact scoped code/doc change, or “no code change”.
 - **Verification:** exact command and real exit/output summary; specify unit, runtime readback or benchmark.
 - **Docs updated:** links to changed source-of-truth/component notes.
 - **Still uncertain:** questions that require a later fixture, source inspection or runtime check.
+
+
+### M1 — October batch selection and schema boundary (2026-10-05)
+
+- **Purpose / what I can now explain:** read → parse/validate UTC event_time → classify → independently sample OLD/NEW → existing transformation. October is batch; November is the stream target. OLD `[Oct 01,Oct 16)`, NEW `[Oct 16,Nov 01)`. INVALID and EXCLUDED belong to neither. Source order does not change membership; it may change sampled identities.
+- **Diagram:** [M1 component flow](docs/m1_batch_selection.md). Inputs are nine-column REES46 CSV events; outputs are selected source rows, classification counts, then local OLD nine-column / NEW ten-column CSV.
+- **Inspected/changed:** `src/generator/batch_generator.py`, `config/generator_config.yaml`, `tests/test_batch_selection_m1.py`, `tests/fixtures/m1_october_boundaries.csv.fixture`; inspected relevant existing tests and Makefile/rehearsal calls. Added `tests/m1_readback.py` for independent output checks.
+- **Change and reason:** remove row-offset/schema coupling and independent hard-coded dates; validate sole UTC config; random-priority reservoir sampling per population. Shortages return available rows without quota transfer/duplication. Add isolated local destination, counts in manifest. Benchmark retains scale/replica semantics and uses shared classifier; no benchmark run.
+- **Exact checks/results:** `python -m pytest tests/test_batch_selection_m1.py -q -s` → 9 passed, 12/12 fixture classifications match (OLD=4, NEW=5, EXCLUDED=2, INVALID=1); reordered-source membership, deterministic sampling, chunk-size sampling, shortage, empty population and invalid-input checks pass. Final renamed-fixture run `python -m pytest tests/test_batch_selection_m1.py -q` → 9 passed. `python -m pytest tests/test_generator.py -q -k 'schema_evolution_part or seed_sequence_reproducibility'` → 3 passed, 15 deselected.
+- **Small runtime:** `python src/generator/batch_generator.py --mode small --sample-size 1000 --local-output-dir /tmp/ecom-m1-runtime-kWrAz2` → exit 0. Source counts OLD=20,442,805; NEW=22,005,959; INVALID=0; EXCLUDED=0. Selected 500+500, output 510+510 after existing transformation. `python tests/m1_readback.py /tmp/ecom-m1-runtime-kWrAz2` → exit 0; independent parse confirms bounds and exact schemas, no wrong membership. See [readback](docs/evidence/m1-2026-10-05/readback.json), [manifest](docs/evidence/m1-2026-10-05/generation_manifest.json), [log](docs/evidence/m1-2026-10-05/generator.log).
+- **Common failures/debug:** invalid config order or UTC notation raises; malformed event_time increments INVALID; CSV structural errors raise; insufficient schema population logs shortage. Inspect classification before sampling, then manifest counts, then read back output independently. Small output still requires a full source scan.
+- **Docs updated:** target design, data contract, current implementation, this roadmap, [component evidence](docs/m1_batch_selection.md) and docs index. Rubric not marked complete: M1 does not verify all generator requirements.
+- **Still uncertain / stop:** full October output, medium/full scale and replication, duplicate/skew/distribution correctness, MinIO delivery, November stream and downstream systems are NOT YET VERIFIED. No M2 work; awaiting learner review.

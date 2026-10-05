@@ -2,11 +2,11 @@
 
 `docs/` dành cho ghi chú kỹ thuật theo technology/component và bằng chứng được tạo sau khi kiểm chứng. Tài liệu ở đây cần ghi version/phạm vi, code liên quan, lệnh/input, thời điểm, kết quả thật và giới hạn. Không chép roadmap hoặc thiết kế tổng thể vào đây.
 
-Hiện chưa có tài liệu component mới được xác nhận trong cấu trúc này. Khi hoàn tất milestone, thêm hoặc cập nhật ghi chú component phù hợp rồi liên kết tại đây. Chỉ tạo evidence cho lần chạy mới; unit test không phải bằng chứng pipeline runtime.
+Đã có [M1 batch selection và small local readback](m1_batch_selection.md); các component khác chưa có evidence mới. Khi hoàn tất milestone, thêm hoặc cập nhật ghi chú component phù hợp rồi liên kết tại đây. Chỉ tạo evidence cho lần chạy mới; unit test không phải bằng chứng pipeline runtime.
 
 | Area | Technical notes / evidence | Status |
 |---|---|---|
-| Generator | TBD — add after generator milestone | Not verified |
+| Generator | [M1 batch selection](m1_batch_selection.md) | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally; full output/MinIO not verified |
 | Kafka / Flink | TBD — add after stream milestone | Not verified |
 | Spark / Lakehouse / DWH | TBD — add after batch processing milestone | Not verified |
 | Airflow | TBD — add after DAG runtime milestone | Not verified |

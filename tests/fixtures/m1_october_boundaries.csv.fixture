@@ -1,0 +1,13 @@
+event_time,event_type,product_id,category_id,category_code,brand,price,user_id,user_session
+2019-10-25 12:00:00 UTC,view,1001,2001,electronics.phone,fixture,10.0,101,m1-01
+2019-09-30 23:59:59 UTC,view,1002,2001,electronics.phone,fixture,10.0,102,m1-02
+2019-10-01 00:00:00 UTC,view,1003,2001,electronics.phone,fixture,10.0,103,m1-03
+2019-10-15 23:59:59 UTC,view,1004,2001,electronics.phone,fixture,10.0,104,m1-04
+2019-11-01 00:00:00 UTC,view,1005,2001,electronics.phone,fixture,10.0,105,m1-05
+2019-10-16 00:00:00 UTC,view,1006,2001,electronics.phone,fixture,10.0,106,m1-06
+2019-10-10 12:00:00 UTC,view,1007,2001,electronics.phone,fixture,10.0,107,m1-07
+not-a-time,view,1008,2001,electronics.phone,fixture,10.0,108,m1-08
+2019-10-31 23:59:59 UTC,view,1009,2001,electronics.phone,fixture,10.0,109,m1-09
+2019-10-20 12:00:00 UTC,view,1010,2001,electronics.phone,fixture,10.0,110,m1-10
+2019-10-15 23:59:59.999999 UTC,view,1011,2001,electronics.phone,fixture,10.0,111,m1-11
+2019-10-31 23:59:59.999999 UTC,view,1012,2001,electronics.phone,fixture,10.0,112,m1-12

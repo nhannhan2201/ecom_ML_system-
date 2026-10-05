@@ -8,7 +8,7 @@ Design objectives:
 1. Simulate Skew & High Cardinality (inheriting natural REES46 distributions + synthetic hot keys)
 2. Simulate Schema Evolution:
    - Part 1 (01/10 -> 15/10): Exactly 9 canonical columns (no discount_percent)
-   - Part 2 (16/10 -> 25/10): Exactly 10 canonical columns (with discount_percent)
+   - Part 2 (16/10 -> 31/10): Exactly 10 canonical columns (with discount_percent)
 3. Simulate Offline Data Quality Issues: Inject ~2% duplicate records into both parts
 4. Generator Configuration: Read parameters from config/generator_config.yaml
 5. Store Data into MinIO: Upload to MinIO bucket 'ecommerce-raw'
@@ -74,6 +74,7 @@ class BatchDataGenerator:
         skew_override: bool = False,
         dry_run: bool = False,
         stats_only: bool = False,
+        local_output_dir: str = None,
     ):
         self.config_path = config_path
         self.config = self._load_config()
@@ -81,6 +82,10 @@ class BatchDataGenerator:
         self.minio_cfg = self.batch_cfg.get("minio", {})
         self.dry_run = dry_run
         self.stats_only = stats_only
+        self.local_output_dir = local_output_dir
+        if local_output_dir and mode not in (None, "small"):
+            raise ValueError("local_output_dir is only supported for small mode")
+        self._load_batch_boundaries()
 
         # Randomness & seed configuration
         self.base_seed = int(self.batch_cfg.get("base_seed", 42))
@@ -109,7 +114,7 @@ class BatchDataGenerator:
 
         if self.mode == "small":
             small_def = modes_def.get("small", {})
-            self.sample_size = sample_size or (
+            self.sample_size = sample_size if sample_size is not None else (
                 small_def.get("sample_size", 1000000) if isinstance(small_def, dict) else small_def
             )
             self.target_size_gb = None
@@ -136,10 +141,15 @@ class BatchDataGenerator:
             self.sample_size = sample_size or self.batch_cfg.get("sample_size", 1000000)
             self.target_size_gb = target_size_gb
 
+        if self.mode == "small" and (not isinstance(self.sample_size, int) or self.sample_size <= 0):
+            raise ValueError("small sample_size must be a positive integer")
+        if local_output_dir and self.mode != "small":
+            raise ValueError("local_output_dir is only supported for small mode")
+
         self.input_csv = (
             self._resolve_input_csv() if not self.dry_run else self.batch_cfg.get("input_csv", "2019-Oct.csv")
         )
-        self.s3_client = self._init_s3_client() if (not self.dry_run and not self.stats_only) else None
+        self.s3_client = self._init_s3_client() if (not self.dry_run and not self.stats_only and not self.local_output_dir) else None
 
         logger.info(
             f"Init BatchGenerator: mode='{self.mode}', dry_run={self.dry_run}, stats_only={self.stats_only}, "
@@ -147,6 +157,81 @@ class BatchDataGenerator:
             f"sample_size={f'{self.sample_size:,}' if self.sample_size else 'N/A'}, "
             f"target_size_gb={self.target_size_gb or 'N/A'}, chunk_size={self.chunk_size:,}"
         )
+
+    def _load_batch_boundaries(self):
+        """Read the sole UTC boundary contract; reject ambiguous configuration."""
+        date_range = self.batch_cfg.get("date_range", {})
+        evolution = self.batch_cfg.get("fault_injection", {}).get("schema_evolution", {})
+        values = [date_range.get("start_timestamp"), evolution.get("effective_timestamp"),
+                  date_range.get("end_timestamp")]
+        if any(not isinstance(value, str) or not value.endswith("Z") for value in values):
+            raise ValueError("batch boundaries must be explicit UTC timestamps ending in Z")
+        self.batch_start, self.evolution_timestamp, self.batch_end = [pd.Timestamp(value) for value in values]
+        if not self.batch_start < self.evolution_timestamp < self.batch_end:
+            raise ValueError("batch boundaries must satisfy start < effective < end")
+        if not evolution.get("enabled") or evolution.get("new_column") != "discount_percent":
+            raise ValueError("M1 requires enabled schema evolution with discount_percent")
+
+    def _classify_chunk(self, chunk: pd.DataFrame) -> pd.Series:
+        """Return one classification per row without modifying its source values."""
+        text = chunk["event_time"].astype("string")
+        valid_format = text.str.fullmatch(
+            r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})? UTC", na=False
+        )
+        timestamps = pd.to_datetime(
+            text.where(valid_format).str.replace(" UTC", "", regex=False),
+            format="ISO8601", errors="coerce", utc=True,
+        )
+        result = pd.Series("EXCLUDED", index=chunk.index, dtype="string")
+        result.loc[timestamps.isna()] = "INVALID"
+        inside = timestamps.ge(self.batch_start) & timestamps.lt(self.batch_end)
+        result.loc[inside & timestamps.lt(self.evolution_timestamp)] = "OLD"
+        result.loc[inside & timestamps.ge(self.evolution_timestamp)] = "NEW"
+        return result
+
+    def _iter_classified_chunks(self):
+        """Scan unsorted source; expose counts before any sampling/transformation."""
+        self.selection_counts = dict.fromkeys(("OLD", "NEW", "EXCLUDED", "INVALID"), 0)
+        for chunk in pd.read_csv(self.input_csv, chunksize=self.chunk_size):
+            classifications = self._classify_chunk(chunk)
+            for group, count in classifications.value_counts().items():
+                self.selection_counts[group] += int(count)
+            yield chunk, classifications
+        logger.info("Source classification counts: %s", self.selection_counts)
+
+    def _sample_classified_rows(self):
+        """Uniform random-priority reservoirs per schema, bounded by quota + one chunk.
+
+        Independent seeded random priorities retain the highest k source rows.
+        Insufficient populations are returned as-is; no duplication or quota transfer.
+        """
+        quotas = {"OLD": self.sample_size // 2, "NEW": self.sample_size - self.sample_size // 2}
+        rngs = {group: np.random.default_rng(np.random.SeedSequence([self.base_seed, i]))
+                for i, group in enumerate(quotas)}
+        reservoirs = {}
+        priorities = {group: np.empty(0) for group in quotas}
+        empty = None
+        for chunk, classifications in self._iter_classified_chunks():
+            empty = chunk.iloc[:0].copy()
+            for group, quota in quotas.items():
+                candidates = chunk.loc[classifications.eq(group)]
+                keys = rngs[group].random(len(candidates))
+                combined = pd.concat([reservoirs.get(group, empty), candidates], ignore_index=True)
+                keys = np.concatenate([priorities[group], keys])
+                if len(keys) > quota:
+                    keep = np.argpartition(keys, len(keys) - quota)[-quota:] if quota else np.empty(0, dtype=int)
+                    keep.sort()
+                    combined = combined.iloc[keep].reset_index(drop=True)
+                    keys = keys[keep]
+                reservoirs[group], priorities[group] = combined, keys
+        if empty is None:
+            empty = pd.DataFrame(columns=CANONICAL_9_COLUMNS)
+        self.selected_source_counts = {group: len(reservoirs.get(group, empty)) for group in quotas}
+        for group, quota in quotas.items():
+            if self.selected_source_counts[group] < quota:
+                logger.warning("%s population below quota: requested=%s selected=%s; no backfill",
+                               group, quota, self.selected_source_counts[group])
+        return reservoirs.get("OLD", empty), reservoirs.get("NEW", empty)
 
     def _load_config(self) -> dict:
         """Load and parse YAML configuration."""
@@ -326,8 +411,9 @@ class BatchDataGenerator:
 
     def _save_manifest(self, manifest_data: dict):
         """Save generation manifest locally and upload to MinIO."""
-        os.makedirs("data", exist_ok=True)
-        local_path = "data/generation_manifest.json"
+        output_dir = self.local_output_dir or "data"
+        os.makedirs(output_dir, exist_ok=True)
+        local_path = os.path.join(output_dir, "generation_manifest.json")
         with open(local_path, "w", encoding="utf-8") as f:
             json.dump(manifest_data, f, indent=2, ensure_ascii=False)
         logger.info(f"Saved generation manifest locally at: {local_path}")
@@ -402,90 +488,48 @@ class BatchDataGenerator:
         Execute sample generation (small: 1M or medium sample) with chunked reading.
         """
         sample_size = self.sample_size or 1000000
-        half_sample = sample_size // 2
-        effective_date = (
-            self.batch_cfg.get("fault_injection", {}).get("schema_evolution", {}).get("effective_date", "2019-10-16")
-        )
-        skip_start = 20500000
+        effective_date = self.evolution_timestamp.isoformat()
         bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
         p1_obj = self.minio_cfg.get("part1_object_name", "batch/raw_events_old.csv")
         p2_obj = self.minio_cfg.get("part2_object_name", "batch/raw_events_new.csv")
         dup_rate = self.batch_cfg.get("fault_injection", {}).get("duplicate", {}).get("rate", 0.02)
-
         start_time = time.time()
-        logger.info(f"Starting {self.mode.upper()} mode ({sample_size:,} rows, chunk_size={self.chunk_size:,})...")
-
-        # Part 1: 01/10 -> 15/10 (9 columns)
-        logger.info(f"[Part 1]: Reading & processing {half_sample:,} rows (Pre-{effective_date})...")
-        p1_chunks = []
-        rows_read_p1 = 0
-        p1_dups = 0
-
-        for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, chunksize=self.chunk_size)):
-            needed = half_sample - rows_read_p1
-            if needed <= 0:
-                break
-            if len(chunk) > needed:
-                chunk = chunk.iloc[:needed]
-
-            processed_chunk, n_dup = self._transform_chunk(
-                chunk, is_part2=False, replica_idx=0, chunk_idx=chunk_idx, part_idx=0, duplicate_rate=dup_rate
-            )
-            p1_chunks.append(processed_chunk)
-            rows_read_p1 += len(chunk)
-            p1_dups += n_dup
-            del chunk
-
+        old_rows, new_rows = self._sample_classified_rows()
+        logger.info("Selected source rows: %s", self.selected_source_counts)
+        processed_old, p1_dups = self._transform_chunk(old_rows, is_part2=False, duplicate_rate=dup_rate)
+        p1_chunks = [processed_old]
         df_p1 = pd.concat(p1_chunks, ignore_index=True)
         del p1_chunks
         gc.collect()
 
+        p1_destination = (os.path.join(self.local_output_dir, "raw_events_old.csv")
+                          if self.local_output_dir else f"s3://{bucket}/{p1_obj}")
+        p2_destination = (os.path.join(self.local_output_dir, "raw_events_new.csv")
+                          if self.local_output_dir else f"s3://{bucket}/{p2_obj}")
         p1_csv_bytes = df_p1.to_csv(index=False, encoding="utf-8").encode("utf-8")
         p1_size_mb = len(p1_csv_bytes) / (1024 * 1024)
-        if not self.stats_only:
-            logger.info(f"[Part 1]: Uploading {len(df_p1):,} rows ({df_p1.shape[1]} cols) to s3://{bucket}/{p1_obj}...")
+        if not self.stats_only or self.local_output_dir:
+            logger.info(f"[Part 1]: Writing {len(df_p1):,} rows ({df_p1.shape[1]} cols) to {p1_destination}...")
             self._upload_bytes_to_minio(p1_csv_bytes, p1_obj, bucket)
             # Also save local copies for quick offline access
-            os.makedirs("data", exist_ok=True)
-            with open("data/raw_events_old.csv", "wb") as f_local:
+            output_dir = self.local_output_dir or "data"
+            os.makedirs(output_dir, exist_ok=True)
+            with open(os.path.join(output_dir, "raw_events_old.csv"), "wb") as f_local:
                 f_local.write(p1_csv_bytes)
         del p1_csv_bytes
 
-        # Part 2: 16/10 -> 25/10 (10 columns with discount_percent)
-        logger.info(
-            f"[Part 2]: Reading & processing {half_sample:,} rows from {effective_date} (skip {skip_start:,} rows)..."
-        )
-        p2_chunks = []
-        rows_read_p2 = 0
-        p2_dups = 0
-
-        for chunk_idx, chunk in enumerate(
-            pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)
-        ):
-            needed = half_sample - rows_read_p2
-            if needed <= 0:
-                break
-            if len(chunk) > needed:
-                chunk = chunk.iloc[:needed]
-
-            processed_chunk, n_dup = self._transform_chunk(
-                chunk, is_part2=True, replica_idx=0, chunk_idx=chunk_idx, part_idx=0, duplicate_rate=dup_rate
-            )
-            p2_chunks.append(processed_chunk)
-            rows_read_p2 += len(chunk)
-            p2_dups += n_dup
-            del chunk
-
+        processed_new, p2_dups = self._transform_chunk(new_rows, is_part2=True, duplicate_rate=dup_rate)
+        p2_chunks = [processed_new]
         df_p2 = pd.concat(p2_chunks, ignore_index=True)
         del p2_chunks
         gc.collect()
 
         p2_csv_bytes = df_p2.to_csv(index=False, encoding="utf-8").encode("utf-8")
         p2_size_mb = len(p2_csv_bytes) / (1024 * 1024)
-        if not self.stats_only:
-            logger.info(f"[Part 2]: Uploading {len(df_p2):,} rows ({df_p2.shape[1]} cols) to s3://{bucket}/{p2_obj}...")
+        if not self.stats_only or self.local_output_dir:
+            logger.info(f"[Part 2]: Writing {len(df_p2):,} rows ({df_p2.shape[1]} cols) to {p2_destination}...")
             self._upload_bytes_to_minio(p2_csv_bytes, p2_obj, bucket)
-            with open("data/raw_events_new.csv", "wb") as f_local:
+            with open(os.path.join(self.local_output_dir or "data", "raw_events_new.csv"), "wb") as f_local:
                 f_local.write(p2_csv_bytes)
         del p2_csv_bytes
 
@@ -513,8 +557,8 @@ class BatchDataGenerator:
         print("1. VOLUME & TIMING:")
         print(f"   - Execution time:                {total_time:.2f} seconds")
         print(f"   - Total records generated:       {total_rows:,} rows ({p1_size_mb + p2_size_mb:.2f} MB)")
-        print(f"   - Part 1 (Old Schema, 9 cols):   {len(df_p1):,} rows -> s3://{bucket}/{p1_obj}")
-        print(f"   - Part 2 (New Schema, 10 cols):  {len(df_p2):,} rows -> s3://{bucket}/{p2_obj}")
+        print(f"   - Part 1 (Old Schema, 9 cols):   {len(df_p1):,} rows -> {p1_destination}")
+        print(f"   - Part 2 (New Schema, 10 cols):  {len(df_p2):,} rows -> {p2_destination}")
         print("-" * 85)
         print("2. SCHEMA EVOLUTION:")
         print(f"   - Part 1 columns: {list(df_p1.columns)}")
@@ -537,6 +581,8 @@ class BatchDataGenerator:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "mode": self.mode,
             "sample_size": sample_size,
+            "source_classification_counts": self.selection_counts,
+            "selected_source_counts": self.selected_source_counts,
             "total_rows": total_rows,
             "total_bytes": int((p1_size_mb + p2_size_mb) * 1024 * 1024),
             "total_size_mb": round(p1_size_mb + p2_size_mb, 2),
@@ -580,8 +626,7 @@ class BatchDataGenerator:
 
         bucket = self.minio_cfg.get("bucket_name", "ecommerce-raw")
         dup_rate = self.batch_cfg.get("fault_injection", {}).get("duplicate", {}).get("rate", 0.02)
-        effective_date = "2019-10-16"
-        skip_start = 20500000
+        effective_date = self.evolution_timestamp.isoformat()
 
         start_time = time.time()
         logger.info(f"Starting {self.mode.upper()} mode (Target: {target_gb:.1f} GB across 2 stages)...")
@@ -602,12 +647,11 @@ class BatchDataGenerator:
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
 
-            for chunk_idx, chunk in enumerate(pd.read_csv(self.input_csv, chunksize=self.chunk_size)):
+            for chunk_idx, (chunk, classifications) in enumerate(self._iter_classified_chunks()):
                 if p1_bytes_written >= target_bytes_per_stage:
                     break
 
-                chunk_dates = chunk["event_time"].astype(str).str[:10]
-                chunk_valid = chunk[chunk_dates < effective_date]
+                chunk_valid = chunk.loc[classifications.eq("OLD")]
                 if chunk_valid.empty:
                     continue
 
@@ -669,14 +713,11 @@ class BatchDataGenerator:
             part_buffer_bytes = 0
             is_first_chunk_in_part = True
 
-            for chunk_idx, chunk in enumerate(
-                pd.read_csv(self.input_csv, skiprows=range(1, skip_start), chunksize=self.chunk_size)
-            ):
+            for chunk_idx, (chunk, classifications) in enumerate(self._iter_classified_chunks()):
                 if p2_bytes_written >= target_bytes_per_stage:
                     break
 
-                chunk_dates = chunk["event_time"].astype(str).str[:10]
-                chunk_valid = chunk[(chunk_dates >= effective_date) & (chunk_dates <= "2019-10-25")]
+                chunk_valid = chunk.loc[classifications.eq("NEW")]
                 if chunk_valid.empty:
                     continue
 
@@ -795,6 +836,7 @@ if __name__ == "__main__":
     )
     parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium sample)")
     parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB")
+    parser.add_argument("--local-output-dir", help="Small-mode isolated local CSV/manifest output; disables MinIO")
     parser.add_argument("--config", default="config/generator_config.yaml", help="Path to config YAML")
     parser.add_argument("--skewed", action="store_true", help="Enable opt-in synthetic skew injection")
     parser.add_argument(
@@ -813,5 +855,6 @@ if __name__ == "__main__":
         skew_override=args.skewed,
         dry_run=args.dry_run,
         stats_only=args.stats_only,
+        local_output_dir=args.local_output_dir,
     )
     gen.run()

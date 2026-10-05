@@ -2,7 +2,7 @@
 
 ## Purpose and confidence
 
-This file maps connections declared in current source, configuration and DAGs. It answers how the repository is presently wired. It does not describe the desired design (see [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md)) or define dataset semantics (see [DATA_CONTRACT.md](DATA_CONTRACT.md)). A static source connection is not proof of successful runtime delivery. No pipeline was run for this documentation audit.
+This file maps connections declared in current source, configuration and DAGs. It answers how the repository is presently wired. It does not describe the desired design (see [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md)) or define dataset semantics (see [DATA_CONTRACT.md](DATA_CONTRACT.md)). A static source connection is not proof of successful runtime delivery. The original map was a static audit. [M1](docs/m1_batch_selection.md) subsequently verified only batch selection/sampling and isolated small local CSV readback; no downstream pipeline was run.
 
 ## Source-declared flow
 
@@ -30,6 +30,14 @@ flowchart LR
 | Feast stream pusher | Redis by default; optional offline/both | Feast online/historical retrieval | `target` defaults online; offsets/write completeness unverified. |
 | DWH setup/sync | PostgreSQL bronze/silver/gold tables | SQL analytics | Script contains destructive `DROP TABLE ... CASCADE`; do not run casually. |
 
+## Batch M1 update
+
+- Shared `_classify_chunk` parses UTC source timestamps and uses configured start/evolution/end; no row offset or independent benchmark date rules remain.
+- `small` scans the source and samples each classified population with seeded random-priority reservoirs; shortages are observable and not backfilled.
+- `--local-output-dir` writes isolated local CSV/manifest and disables MinIO. Runtime evidence is limited to 1,000 selected source rows and output readback.
+- Medium/full retain byte targets and replica transformations; shared classification is SOURCE-DECLARED there, not benchmark runtime evidence.
+- October is the batch target, November the stream target. Current stream implementation still uses October and was not changed in M1.
+
 ## Material current-versus-target differences
 
 - Current Spark DP3 aggregates 30-day batch features. The target model contract is four 15-minute behavior features.
@@ -44,7 +52,7 @@ flowchart LR
 
 | Finding | Location / trigger | Invariant at risk | Verification needed |
 | --- | --- | --- | --- |
-| Batch small mode and date split are not yet established by a source readback | `src/generator/batch_generator.py`, generator config | Every event belongs to the intended date/schema part exactly as specified | Tiny CSV fixture; compare keys/counts/boundaries. |
+| Batch classification/sampling verified locally in M1 | `src/generator/batch_generator.py`, generator config | UTC October membership, disjoint schema groups; sample only after classification | [Fixture + small readback](docs/m1_batch_selection.md); MinIO and benchmark/replica output remain unverified. |
 | Stream source range differs from config description | `src/generator/stream_generator.py`, `config/generator_config.yaml` | Replay covers the intended interval once, with offsets/checkpoints consistent | Bounded fixture and Kafka readback in isolated topic. |
 | Composite dedup can collapse distinct same-time actions | Spark Silver and Flink dedup key omits session/event id | One legitimate event maps to one retained event | Construct collision fixture; decide stable identity policy. |
 | Gold event hash omits event type | `src/spark/spark_optimized.py` | Event identity does not collide across different actions | Unit fixture/readback; compare same user/time/product different type. |

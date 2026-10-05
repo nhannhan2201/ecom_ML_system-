@@ -1,0 +1,60 @@
+{
+  "verified_at_utc": "2026-10-05T01:12:27.399252+00:00",
+  "evidence_level": "SMALL-RUNTIME-VERIFIED",
+  "versions": {
+    "python": "3.13.12",
+    "pandas": "2.3.3",
+    "numpy": "2.5.1"
+  },
+  "source_classification_counts": {
+    "OLD": 20442805,
+    "NEW": 22005959,
+    "EXCLUDED": 0,
+    "INVALID": 0
+  },
+  "selected_source_counts": {
+    "OLD": 500,
+    "NEW": 500
+  },
+  "outputs": {
+    "OLD": {
+      "path": "/tmp/ecom-m1-runtime-kWrAz2/raw_events_old.csv",
+      "rows_after_transformation": 510,
+      "min_event_timestamp": "2019-10-01T02:32:47+00:00",
+      "max_event_timestamp": "2019-10-15T21:18:52+00:00",
+      "columns": [
+        "event_time",
+        "event_type",
+        "product_id",
+        "category_id",
+        "category_code",
+        "brand",
+        "price",
+        "user_id",
+        "user_session"
+      ],
+      "wrong_schema_membership_rows": 0,
+      "sha256": "a58fc4a53811acf1ca35c83d9b2132bab7da57b275abd29c222401f6e751d3b0"
+    },
+    "NEW": {
+      "path": "/tmp/ecom-m1-runtime-kWrAz2/raw_events_new.csv",
+      "rows_after_transformation": 510,
+      "min_event_timestamp": "2019-10-16T01:42:22+00:00",
+      "max_event_timestamp": "2019-10-31T20:50:16+00:00",
+      "columns": [
+        "event_time",
+        "event_type",
+        "product_id",
+        "category_id",
+        "category_code",
+        "brand",
+        "price",
+        "user_id",
+        "user_session",
+        "discount_percent"
+      ],
+      "wrong_schema_membership_rows": 0,
+      "sha256": "3adb41c096061d5b5da39237aeaa7c4cd22b81824e6d69ffc6f9fcad2ab2c2ba"
+    }
+  }
+}
