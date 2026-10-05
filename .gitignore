@@ -5,7 +5,6 @@ docker/.env
 # Large raw datasets & local data
 *.csv
 *.tsv
-!scratch_*.tsv
 data/
 spark-warehouse/
 
@@ -25,7 +24,8 @@ build/
 
 # Testing & Linting
 .pytest_cache/
-.coverage
+.coverage*
+.hypothesis/
 htmlcov/
 .mypy_cache/
 .ruff_cache/
@@ -46,7 +46,7 @@ airflow.db
 .~lock.*#
 
 # Feast registry temporary files
-feature_store/data/registry.db*
+feature_store/data/
 
 # Flink JARs and Plugins
 *.jar
@@ -57,3 +57,10 @@ docker/flink_plugins/
 *.zip
 *.tar.gz
 
+
+# Generated local outputs
+*.log
+*.parquet
+generation_manifest.json
+outputs/
+artifacts/

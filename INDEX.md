@@ -10,4 +10,4 @@ Read these files in order when you need the complete project picture:
 6. [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) — learning sequence and verified progress.
 7. [AGENTS.md](AGENTS.md) — instructions for agents maintaining these documents and pairing with the learner.
 
-Technology-specific explanations and fresh run evidence belong under [`docs/`](docs/INDEX.md), linked from its component index. The API README is currently a placeholder, not proof of a prediction service.
+Technology-specific explanations and fresh run evidence belong under [`docs/`](docs/INDEX.md), linked from its component index. API placeholder cũ đã được gỡ khỏi rebuild baseline.
