@@ -32,6 +32,8 @@ import shutil
 import logging
 import argparse
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
+from dotenv import load_dotenv
 import yaml
 import pandas as pd
 import numpy as np
@@ -846,6 +848,11 @@ if __name__ == "__main__":
         "--stats-only", action="store_true", help="Run transformations and write manifest without uploading to MinIO"
     )
     args = parser.parse_args()
+
+    load_dotenv(
+        dotenv_path=Path(__file__).resolve().parents[2] / ".env",
+        override=False,
+    )
 
     gen = BatchDataGenerator(
         config_path=args.config,

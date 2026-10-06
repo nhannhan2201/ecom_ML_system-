@@ -13,18 +13,18 @@
 
 Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI K11 - MLE.xlsx, sheet de. Bỏ qua Novel Ideas. Các phần final/MLE sẽ xét sau luồng dữ liệu nền tảng.
 
-Có code không có nghĩa đã implement đúng hoặc đã chạy. Không dùng kết quả cũ để quy điểm. Mỗi milestone sẽ cập nhật phần đã kiểm chứng, lệnh và kết quả thật. Offline generator yêu cầu tối thiểu 100GB; chưa có bằng chứng chạy lại ở scale đó.
+Có code không có nghĩa đã implement đúng hoặc đã chạy. Không dùng kết quả cũ để quy điểm. Mỗi milestone sẽ cập nhật phần đã kiểm chứng, lệnh và kết quả thật. Offline generator yêu cầu tối thiểu 100GB; chưa có bằng chứng chạy lại ở scale đó. [Lần chạy small mới](docs/batch_generator_minio.md) chỉ xác minh 137.333.941 bytes CSV, không đáp ứng ≥100 GB. Duplicate/skew chưa được audit độc lập; không nâng trạng thái các tiêu chí đó từ manifest/log.
 
 Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt buộc cửa sổ 30 ngày. Điều này không bỏ các tiêu chí feature store: offline feature history, incremental materialize offline→online, stream push vào offline và online, temporal columns, training/label join vẫn phải thực hiện và kiểm chứng. Xem [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) and [DATA_CONTRACT.md](DATA_CONTRACT.md); thiết kế này chưa được code/runtime xác nhận. Tiến độ học nằm ở [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 
 | Dòng workbook | Nhóm | Yêu cầu | Điểm yêu cầu | Code | Kiểm chứng runtime/rubric | Nơi đối chiếu |
 | --- | --- | --- | --- | --- | --- | --- |
-| 3 | Engineering Fundamentals | Có sử dụng Docker & Docker Compose | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `docker/docker-compose-*.yml` |
+| 3 | Engineering Fundamentals | Có sử dụng Docker & Docker Compose | 2.0 | `compose.yaml` chỉ MinIO | Runtime: MinIO healthy + integration readback PASS; không xác nhận Dockerfile optimization | [MinIO evidence](docs/batch_generator_minio.md) |
 | 4 | Engineering Fundamentals | Optimize Dockerfile (ví dụ multistage build) | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `docker/Dockerfile.airflow` |
 | 5 | Implement Data Generator | Simulate skew | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
-| 6 | Implement Data Generator | Simulate schema evolution | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
+| 6 | Implement Data Generator | Simulate schema evolution | 2.0 | OLD 9 cột / NEW thêm discount_percent | Small runtime: remote header và field count 9/10 PASS; timestamp membership toàn bộ output chưa kiểm chứng | [MinIO evidence](docs/batch_generator_minio.md) |
 | 7 | Implement Data Generator | Simulate another offline data problem (Ví dụ: 2% duplicate rate) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
-| 8 | Implement Data Generator | Store data after generating so that we can ingest to Bronze zone later | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
+| 8 | Implement Data Generator | Store data after generating so that we can ingest to Bronze zone later | 2.0 | Batch Generator → MinIO raw | Small runtime readback PASS: 3 objects, manifest, schema/count/bytes và CSV equality; chưa chạy Bronze hoặc ≥100 GB | [MinIO evidence](docs/batch_generator_minio.md) |
 | 9 | Implement Data Generator | Simulate late arrivals | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/stream_generator.py` |
 | 10 | Implement Data Generator | Simulate another streaming data problem (Ví dụ: 1.5% duplicate rate) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/stream_generator.py` |
 | 11 | Processing Jobs | Spark Baseline (without optimization) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_baseline.py` |

@@ -39,7 +39,7 @@ Use Vietnamese and beginner-friendly language. Skip Novel Ideas. Preserve user c
 
 ## Current status
 
-- **Current component:** Batch Generator — October classification/sampling implemented with nine passing tests; historical small runtime is recorded below. Learning is not DONE until the learner understands and can explain the flow. Do not start Batch Generator — schema and deterministic fields without approval.
+- **Current component:** Batch Generator → MinIO Raw Storage — small runtime verification PASS: container/bucket/objects/manifest/schema/counts/bytes/CSV equality và 9 unit tests. [Evidence](docs/batch_generator_minio.md). Chưa ≥100 GB; learner explanation chưa ghi nhận, không tự đánh dấu toàn bộ component DONE hoặc bắt đầu component tiếp theo.
 - **Design:** four canonical 15-minute features predict at least one purchase during the following hour. See [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md).
 - **Contract:** the root [DATA_CONTRACT.md](DATA_CONTRACT.md) now records current source declarations and the target schema separately.
 - **Source audit:** root docs reorganized and current generator/Spark/Flink/Feast/DWH paths inspected. This was static inspection only; no pipeline/test was run in this documentation task.
@@ -83,3 +83,13 @@ Batch Generator record is below. For later milestones, use the same concise reco
 - **Change / purpose:** rename the component note, test module and October boundary fixture to functional Batch Generator names; update links, fixture path and milestone wording. Roadmap order remains unchanged. Historical deleted script/runtime paths and fixture session IDs retain their original values.
 - **Scope:** naming/documentation only; generator error text changes its component label. No processing logic, fixture data, architecture, contract semantics or rubric criteria change. Batch Generator learning remains not DONE; no subsequent component work and no commit.
 - **Verification:** `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 9 passed in 1.20s; `git diff --check` → exit 0; local Markdown links → no broken links. Fixture bytes unchanged; generator diff changes only the error-message component name.
+
+### Batch Generator → MinIO Raw Storage — 2026-10-06
+
+- **Purpose / input → output:** October CSV → sample 1.000.000 → OLD/NEW transformation → 1.020.000 dòng trong MinIO raw và local; [diagram/key files/evidence](docs/batch_generator_minio.md).
+- **Changes/reasons:** Compose chỉ MinIO với named volume và bash HTTP healthcheck (image thiếu curl); CLI nạp root `.env` bằng python-dotenv 1.2.1 trước constructor, giữ `os.environ` và shell precedence. Không đổi upload logic.
+- **Run:** learner chạy `python src/generator/batch_generator.py --mode small`, log 14:33:29–14:36:09 Asia/Ho_Chi_Minh, report 159,69s; đây không phải benchmark.
+- **Verification:** `docker inspect --format '{{.State.Health.Status}}' ecom_ml_system-minio-1` → healthy. Inline Python + container mc stat/ls/cat → exit 0: bucket/3 objects/manifest PASS, mỗi CSV 510.000 dòng, 9/10 cột, remote CSV SHA-256 bằng local, tổng 137.333.941 bytes khớp manifest. `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 9 passed in 1.07s.
+- **Learning/debug:** healthcheck thiếu công cụ có thể báo unhealthy dù API 200; readback mới xác nhận dữ liệu. Duplicate injection 2% input là 1,9608% output; chưa audit duplicate thực tế.
+- **Docs updated:** CURRENT_IMPLEMENTATION, DATA_CONTRACT (runtime status, không đổi schema), RUBRIC chỉ dòng liên quan, README, component/index/evidence.
+- **Still uncertain / stop:** ≥100 GB, medium/full, downstream Bronze, persistence sau recreate có dữ liệu, retry/restart và timestamp membership toàn bộ output chưa kiểm chứng. Runtime PASS; learner explanation chưa ghi nhận, chưa chốt toàn bộ component DONE. Không chuyển component.

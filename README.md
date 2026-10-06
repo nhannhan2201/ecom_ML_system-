@@ -25,4 +25,6 @@ Read the [project documentation map](INDEX.md) in order. The central references 
 | `tests/` | Unit, property and structure tests |
 | `docs/` | Component explanations and new evidence after verification |
 
-`Makefile` and old pipeline jobs were removed. Run Batch Generator with `python -m pytest tests/test_batch_generator.py -q`; tests verify code-level properties only; they do not prove that external services or data pipelines completed successfully. The retained generator can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.
+[Batch Generator → MinIO small runtime](docs/batch_generator_minio.md) is verified (2026-10-06): healthy MinIO, three objects and CSV readback; ≥100 GB and downstream remain unverified. `compose.yaml` runs MinIO only. CLI loads the root `.env` without overriding existing environment variables.
+
+`Makefile` and old pipeline jobs were removed. Run Batch Generator unit tests with `python -m pytest tests/test_batch_generator.py -q`; tests verify code-level properties only; they do not prove that external services or data pipelines completed successfully. The retained generator can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.

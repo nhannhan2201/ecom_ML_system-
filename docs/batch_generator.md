@@ -1,5 +1,7 @@
 # Batch Generator — October batch selection and small local readback
 
+Evidence mới: [Batch Generator → MinIO small runtime, 2026-10-06](batch_generator_minio.md). Nội dung runtime bên dưới vẫn là lịch sử local, không dùng thay cho lần chạy mới.
+
 Cleanup baseline: evidence JSON/log và script readback cũ đã được dọn. Số liệu runtime dưới đây là lịch sử, không phải evidence còn sẵn hay lần chạy mới.
 
 Ngày kiểm chứng: 2026-10-05, khoảng 08:09–08:12 Asia/Ho_Chi_Minh. Runtime: Python 3.13.12, pandas 2.3.3, NumPy 2.5.1. Config requirements declare pandas >=2.0.0 and NumPy >=1.24.0; installed versions above describe this run, not all environments.
