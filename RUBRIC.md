@@ -6,10 +6,12 @@
 
 ### Cách đọc trạng thái
 
-- **Code:** `Chưa rà` = chưa xem phần implementation; `Có code, cần rà soát` = có ứng viên code nhưng chưa xác nhận đúng rubric; `Thiếu/chưa tìm thấy` = chưa tìm thấy implementation trong phạm vi đã rà.
+- **Code:** `Chưa rà` = chưa xem phần implementation; `Có code, cần rà soát` = có ứng viên code nhưng chưa xác nhận đúng rubric; `Thiếu/chưa tìm thấy` = chưa tìm thấy implementation trong phạm vi đã rà; `Chưa implement trong rebuild-clean` = file implementation không còn trên branch hiện tại.
 - **Kiểm chứng:** `Chưa kiểm chứng` = chưa có phép thử phù hợp; `Unit test` chỉ xác nhận logic nhỏ; `Runtime` cần lần chạy pipeline/service; `Scale/benchmark` cần phép đo đúng quy mô/config.
 - Chỉ ghi tiêu chí đã kiểm chứng khi có liên kết evidence, command, input/config, thời điểm, kết quả thật và giới hạn. Không quy điểm từ tên file, DAG trigger, unit test đơn lẻ hoặc kết quả cũ.
 - Một tiêu chí có thể có code mà vẫn chưa đúng/chưa chạy. Giữ riêng hai cột Code và Kiểm chứng.
+
+CURRENT ở bảng dưới là branch `rebuild-clean`. Các đường dẫn ghi **LEGACY old-vibe-backup** là tham chiếu lịch sử, không phải file hiện có hay evidence runtime của branch này.
 
 Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI K11 - MLE.xlsx, sheet de. Bỏ qua Novel Ideas. Các phần final/MLE sẽ xét sau luồng dữ liệu nền tảng.
 
@@ -20,38 +22,38 @@ Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt bu�
 | Dòng workbook | Nhóm | Yêu cầu | Điểm yêu cầu | Code | Kiểm chứng runtime/rubric | Nơi đối chiếu |
 | --- | --- | --- | --- | --- | --- | --- |
 | 3 | Engineering Fundamentals | Có sử dụng Docker & Docker Compose | 2.0 | `compose.yaml` chỉ MinIO | Runtime: MinIO healthy + integration readback PASS; không xác nhận Dockerfile optimization | [MinIO evidence](docs/batch_generator_minio.md) |
-| 4 | Engineering Fundamentals | Optimize Dockerfile (ví dụ multistage build) | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `docker/Dockerfile.airflow` |
+| 4 | Engineering Fundamentals | Optimize Dockerfile (ví dụ multistage build) | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `docker/Dockerfile.airflow` |
 | 5 | Implement Data Generator | Simulate skew | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
 | 6 | Implement Data Generator | Simulate schema evolution | 2.0 | OLD 9 cột / NEW thêm discount_percent | Small runtime: remote header và field count 9/10 PASS; timestamp membership toàn bộ output chưa kiểm chứng | [MinIO evidence](docs/batch_generator_minio.md) |
 | 7 | Implement Data Generator | Simulate another offline data problem (Ví dụ: 2% duplicate rate) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/batch_generator.py` |
 | 8 | Implement Data Generator | Store data after generating so that we can ingest to Bronze zone later | 2.0 | Batch Generator → MinIO raw | Small runtime readback PASS: 3 objects, manifest, schema/count/bytes và CSV equality; chưa chạy Bronze hoặc ≥100 GB | [MinIO evidence](docs/batch_generator_minio.md) |
-| 9 | Implement Data Generator | Simulate late arrivals | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/stream_generator.py` |
-| 10 | Implement Data Generator | Simulate another streaming data problem (Ví dụ: 1.5% duplicate rate) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/generator/stream_generator.py` |
-| 11 | Processing Jobs | Spark Baseline (without optimization) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_baseline.py` |
-| 12 | Processing Jobs | Spark Handle skew with explanation | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/skew_experiment.py` |
-| 13 | Processing Jobs | Spark Handle schema evolution with explanation | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` |
-| 14 | Processing Jobs | Spark Handle other offline data problem with explanation | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` |
-| 15 | Processing Jobs | Spark job được tích hợp vào các data pipeline | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `dags/dp1_raw_to_bronze.py` |
-| 16 | Processing Jobs | Flink Baseline (without optimization) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/flink/stream_baseline.py` |
-| 17 | Processing Jobs | Flink Handle late arrival with explanation | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/flink/stream_optimized.py` |
-| 18 | Processing Jobs | Flink Handle other streaming problem with explanation | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/flink/stream_optimized.py` |
-| 19 | Processing Jobs | Flink Window processing | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/flink/stream_optimized.py` |
-| 20 | Data Storage | Lakehouse (compaction, z-order, partitioning) | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `scripts/optimize_storage.py` |
-| 21 | Data Storage | Datawarehouse (indexing) | 3.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `scripts/setup_dwh_schemas.py` (indexing và benchmark) |
-| 22 | Data Pipeline Orchestration | DP1 Ingest stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `dags/dp1_raw_to_bronze.py` |
-| 23 | Data Pipeline Orchestration | DP1 Validate stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` (validation trong DAG) |
-| 24 | Data Pipeline Orchestration | DP2 Ingest stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `dags/dp2_bronze_to_silver_and_gold.py` |
-| 25 | Data Pipeline Orchestration | DP2 Validate stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` (validation trong DAG) |
-| 26 | Data Pipeline Orchestration | DP3 Ingest stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `dags/dp3_compute_offline_features.py` |
-| 27 | Data Pipeline Orchestration | DP3 Validate stage | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` (validation trong DAG) |
-| 28 | Data Governance | DP1 Lineage between pipeline and tables | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/sync_catalog.py` |
-| 29 | Data Governance | DP1 Data validation | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/verify_contracts.py` |
-| 30 | Data Governance | DP2 Lineage between pipeline and tables | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/sync_catalog.py` |
-| 31 | Data Governance | DP2 Data validation | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/verify_contracts.py` |
-| 32 | Data Governance | DP3 Lineage between pipeline and tables | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/sync_catalog.py` |
-| 33 | Data Governance | DP3 Data validation | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `governance/verify_contracts.py` |
-| 34 | Documentation | Visualize tables on all zones | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
-| 35 | Documentation | Dim table with SCD 2 (valid_from_ts, valid_to_ts, is_current) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py` |
-| 36 | Documentation | Feature tables (feat_ tables) with event_timestamp and created | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `feature_store/features.py` |
-| 37 | Documentation | Relationship between dim & fact tables | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
-| 38 | Documentation | Naming convention (raw_, stg_, dim_, fact_, feat_) | 2.0 | Có code; cần rà soát | Chưa kiểm chứng lại | Toàn bộ repo |
+| 9 | Implement Data Generator | Simulate late arrivals | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/generator/stream_generator.py` |
+| 10 | Implement Data Generator | Simulate another streaming data problem (Ví dụ: 1.5% duplicate rate) | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/generator/stream_generator.py` |
+| 11 | Processing Jobs | Spark Baseline (without optimization) | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_baseline.py` |
+| 12 | Processing Jobs | Spark Handle skew with explanation | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/skew_experiment.py` |
+| 13 | Processing Jobs | Spark Handle schema evolution with explanation | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` |
+| 14 | Processing Jobs | Spark Handle other offline data problem with explanation | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` |
+| 15 | Processing Jobs | Spark job được tích hợp vào các data pipeline | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `dags/dp1_raw_to_bronze.py` |
+| 16 | Processing Jobs | Flink Baseline (without optimization) | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/flink/stream_baseline.py` |
+| 17 | Processing Jobs | Flink Handle late arrival with explanation | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/flink/stream_optimized.py` |
+| 18 | Processing Jobs | Flink Handle other streaming problem with explanation | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/flink/stream_optimized.py` |
+| 19 | Processing Jobs | Flink Window processing | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/flink/stream_optimized.py` |
+| 20 | Data Storage | Lakehouse (compaction, z-order, partitioning) | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `scripts/optimize_storage.py` |
+| 21 | Data Storage | Datawarehouse (indexing) | 3.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `scripts/setup_dwh_schemas.py` (indexing và benchmark) |
+| 22 | Data Pipeline Orchestration | DP1 Ingest stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `dags/dp1_raw_to_bronze.py` |
+| 23 | Data Pipeline Orchestration | DP1 Validate stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` (validation trong DAG) |
+| 24 | Data Pipeline Orchestration | DP2 Ingest stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `dags/dp2_bronze_to_silver_and_gold.py` |
+| 25 | Data Pipeline Orchestration | DP2 Validate stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` (validation trong DAG) |
+| 26 | Data Pipeline Orchestration | DP3 Ingest stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `dags/dp3_compute_offline_features.py` |
+| 27 | Data Pipeline Orchestration | DP3 Validate stage | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` (validation trong DAG) |
+| 28 | Data Governance | DP1 Lineage between pipeline and tables | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/sync_catalog.py` |
+| 29 | Data Governance | DP1 Data validation | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/verify_contracts.py` |
+| 30 | Data Governance | DP2 Lineage between pipeline and tables | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/sync_catalog.py` |
+| 31 | Data Governance | DP2 Data validation | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/verify_contracts.py` |
+| 32 | Data Governance | DP3 Lineage between pipeline and tables | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/sync_catalog.py` |
+| 33 | Data Governance | DP3 Data validation | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `governance/verify_contracts.py` |
+| 34 | Documentation | Visualize tables on all zones | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
+| 35 | Documentation | Dim table with SCD 2 (valid_from_ts, valid_to_ts, is_current) | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py` |
+| 36 | Documentation | Feature tables (feat_ tables) with event_timestamp and created | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `feature_store/features.py` |
+| 37 | Documentation | Relationship between dim & fact tables | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
+| 38 | Documentation | Naming convention (raw_, stg_, dim_, fact_, feat_) | 2.0 | Một phần: raw batch; stg_/dim_/fact_/feat_ chưa implement trong rebuild-clean | Chưa kiểm chứng toàn bộ naming convention | [CURRENT implementation](CURRENT_IMPLEMENTATION.md); downstream chỉ có LEGACY old-vibe-backup |
