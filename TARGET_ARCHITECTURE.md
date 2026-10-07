@@ -1,31 +1,51 @@
 # Target architecture and product decision
 
-## Agreed prediction problem
+## Agreed DE scope and feature contract
 
-Predict whether a user will produce at least one `purchase` event in the hour after a prediction decision. The baseline model receives only four behavioral features computed over the 15 minutes immediately before its feature as-of timestamp. Longer-window behavior can be considered later as a measured experiment; it is not part of this baseline.
+DE prepares event history, feature history and label history, ending at a Feature–Label Dataset for downstream ML. Model training, prediction and production outcome tracking are outside this DE flow. This is the learner-approved target design, not implementation/runtime evidence.
 
-The target feature set is `f_views_15m`, `f_carts_15m`, `f_purchases_15m`, and `total_spend_15m`. Counts include the matching event types; spend sums `price` for purchases only. The window is half-open `[t-15m,t)`, all timestamps are UTC, and the offline/online feature record grain is `(user_id, feature_timestamp)`. The canonical detailed schema and all current mismatches are in [DATA_CONTRACT.md](DATA_CONTRACT.md).
-
-An initial schedule hypothesis is: events handled during `[t-1m,t)` can make a user eligible for a prediction at minute `t`; the feature window ends at `t`; outcome is purchase in `[t,t+1h)`. That scheduling rule remains a **design question** until the team chooses how event availability and late data affect the snapshot. Event time alone cannot prove an event had reached Flink/Feast before a prediction was made.
+The four features are `views_15m`, `carts_15m`, `purchases_15m`, and `total_spend_15m`. Counts match event types; spend sums `price` for purchases only. Spark computes historical/backfill features; Flink computes realtime features with the same semantics. The UTC window is `[t-15m,t)`; grain is `(user_id, feature_timestamp)` with `t=feature_timestamp`. `created_timestamp` is when the row is created, distinct from window end and actual availability. A 15-minute lookback does not specify snapshot cadence or TTL. Detailed schemas belong to [DATA_CONTRACT.md](DATA_CONTRACT.md).
 
 ## Target flow
 
+Every processing box is a logical responsibility, not automatically a separate deployable unit. Solid arrows show target data movement; dashed arrows show interfaces/control. No arrow establishes runtime success.
+
 ```mermaid
-flowchart TD
-  OCT["2019-Oct.csv\noffline bootstrap"] --> BG["Batch generator\nraw copy/schema split"] --> RAW["MinIO raw batch"] --> SP["Spark\nBronze → Silver → Gold + historical 15m"]
-  NOV["2019-Nov.csv\nstream replay"] --> SG["Stream generator"] --> K["Kafka event topic"] --> FL["Flink\nevent-time + canonical 15m windows"]
-  FL --> ARCH["MinIO event history\nraw stream staging/archive"]
-  SP --> OFF["Offline feature history\nDelta/Parquet"]
-  FL --> OFF
-  FL --> PUSH["Feast stream push\noffline + online"] --> REDIS["Feast online store / Redis"]
-  OFF --> MAT["Airflow incremental materialization"] --> REDIS
-  OFF --> TRAIN["Point-in-time training dataset"]
-  REDIS --> PRED["Prediction service"] --> PLOG["prediction_log\nexact input snapshot"]
-  ARCH --> LABEL["Delayed label job\nonly persisted predictions"]
-  PLOG --> LABEL --> TRAIN
+flowchart LR
+  subgraph BATCH["October / Batch"]
+    OCT["2019-Oct.csv"] --> BG["Python Batch Generator"] --> RA["MinIO Raw"] --> BA["Spark ingest/validate → Bronze"] --> SA["Spark normalize/validate/dedup → Silver"]
+    SA --> SAMPLES["Historical samples: user_id,t; cadence OPEN"]
+    SA --> HF["Spark historical features: look back t-15m to t"]
+    SAMPLES --> HF --> HROW["Feature snapshot"]
+    SAMPLES --> HL["Historical Label Job: look forward t to t+1h; Spark/Python OPEN"]
+    SA -->|"clean purchase events"| HL --> HLAB["Label row"]
+  end
+  subgraph STREAM["November / Streaming"]
+    NOV["2019-Nov.csv"] --> RP["Python Replay Producer"] --> K["Kafka"]
+    K --> FL["Flink: same 15m feature semantics"] --> RROW["Realtime feature snapshot"]
+    RROW --> WR["Offline + online write responsibilities; deployment OPEN"]
+    RROW --> IDS["MinIO: selected snapshot identities user_id,t"]
+    K --> PERSIST["Durable persistence: implementation OPEN"] --> RB["MinIO Raw"] --> BB["Spark ingest/validate → Bronze"] --> SB["Spark normalize/validate/dedup → Silver"]
+    IDS --> DL["Delayed Label Job: horizon + completeness; Spark/Python OPEN"]
+    SB -->|"clean persisted purchase events"| DL --> RLAB["Label row"]
+  end
+  HROW --> OFF["MinIO offline feature history: feat_user_15m"]
+  WR --> OFF
+  WR --> ON["Redis: latest valid online features"]
+  HLAB --> LAB["MinIO label history: labels_purchase_1h"]
+  RLAB --> LAB
+  OFF --> MAT["Incremental materialization via Feast"] --> ON
+  OFF -->|"historical retrieval via Feast"| BUILD["Dataset Builder: join user_id,feature_timestamp; finalized labels; Spark/Python OPEN"]
+  LAB --> BUILD --> DATA["Feature–Label Dataset: DE output"]
+  SA --> ANALYTICS["Spark analytics → Gold facts/dimensions/SCD2 → PostgreSQL DWH"]
+  SB --> ANALYTICS
+  FEAST["Feast definitions / SDK; not a database or feature engine"] -. "push interfaces" .-> WR
+  FEAST -. "retrieval / materialization interfaces" .-> MAT
+  FEAST -. "historical retrieval" .-> BUILD
+  CONTROL["Airflow: batch orchestration; DataHub: metadata/lineage; Docker/Compose: runtime; integration mapping OPEN"]
 ```
 
-The diagram is the desired architecture, not current implementation evidence. Solid system components are selected technologies; actual code links and missing pieces are listed in [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md).
+Raw/Bronze/Silver preserve events; offline feature history preserves time-indexed snapshots; Redis holds latest valid serving values. Gold/DWH is an analytics path, not a mandatory feature source. DataHub tracks metadata/lineage rather than storing events; Airflow orchestrates jobs rather than computing features.
 
 ## Responsibilities and invariants
 
@@ -38,8 +58,8 @@ The diagram is the desired architecture, not current implementation evidence. So
 | Flink | Maintain streaming event-time state and compute current 15m features | Late-data policy and watermark behavior match the declared availability rule. |
 | Feast | Define entity/features, historical retrieval, push/materialize and online retrieval | Feast serves/materializes values; Spark/Flink own feature calculations. |
 | Airflow | Order and retry pipeline stages | Trigger success is distinct from task/DAG completion and data readback. |
-| Prediction service | Read online values and persist prediction plus exact values used | Every actual prediction has an immutable id and reproducible input snapshot. |
-| Delayed label job | Join outcomes to actual prediction records when labels mature | Never assign an early negative label while the horizon/completeness policy is pending. |
+| Dataset Builder | Retrieve historical features through Feast and join finalized labels | Join the matching `(user_id,feature_timestamp)` sample and selected snapshot/revision; exclude pending labels. |
+| Historical / delayed label jobs | Read clean purchase events for selected `(user_id,t)` samples in both lanes | Label needs sample identity/time and events, not feature values; never finalize 0 before coverage/completeness is sufficient. |
 | Governance | Describe datasets/lineage and run contracts | Metadata is checked against physical schemas and active snapshots. |
 
 ## Offline/stream parity
@@ -52,20 +72,33 @@ The event archive is the detailed source of truth for rebuilding windows, auditi
 
 ## Feast and materialization
 
-Feast is required by the workbook even with a 15m-only model: offline feature history supports historical retrieval/training, incremental offline-to-online materialization maintains online values, and Flink-produced stream features must be pushed to offline and online stores. The batch materializer and the stream pusher are separate routes and require independent verification. TTL controls configured online freshness/availability; it is not a window definition and does not prove offline retention.
+Feast is required by the workbook even with a 15m-only model: offline feature history supports historical retrieval/training, incremental offline-to-online materialization maintains online values, and Flink-produced stream features must be pushed to offline and online stores. Materialization and realtime offline/online writes are distinct responsibilities requiring independent verification; their deployable job mapping remains OPEN. Feast is not a database and does not create labels. TTL controls configured online freshness/availability; it is not a window definition and does not prove offline retention.
 
-## Label and training contract
+## Labels and Feature–Label Dataset
 
-1. Persist an immutable prediction with `prediction_id`, user, decision timestamp, model version, canonical feature timestamp and the exact four values used.
-2. Open the outcome interval `[prediction_timestamp, prediction_timestamp + 1h)`.
-3. Keep the outcome pending until the interval has elapsed and the agreed event completeness/late-arrival policy permits finalization.
-4. Set the label to 1 if any qualifying purchase exists in the interval, otherwise 0. Join by `prediction_id`, not merely user or date.
-5. Build training examples from finalized prediction rows and their exact feature snapshots. Split train/validation/test chronologically to avoid future leakage.
+1. Select historical samples `(user_id,t)` for October; for November, durably store identities of selected realtime snapshots. Eligibility/cadence remains OPEN.
+2. Compute features over `[t-15m,t)`; derive labels independently from clean Silver purchase events over `[t,t+1h)`.
+3. Keep labels PENDING until the horizon and chosen coverage/completeness policy permit finalization. Then set 1 if any qualifying purchase exists, otherwise 0.
+4. Store label history separately from feature history on MinIO. Join by `(user_id,feature_timestamp)`, using the matching feature snapshot/revision and finalized labels only.
+5. End the DE flow at a reproducible Feature–Label Dataset. Historical labels do not depend on prediction logs. Label jobs may share logic; no separate deployment is implied.
 
-The current DP3 label code instead creates candidate user/minute rows from Silver activity; it is not an implementation of this target prediction-linked label contract.
+Future production predictions may use `prediction_id` to link exact inputs, model version and outcome. This does not define historical labels and is outside the current DE flow. Saved exact prediction snapshots must never be rewritten by later backfills; the relation between feature time and actual prediction time remains OPEN.
 
 ## Dataset direction and unresolved decisions
 
 The agreed source split is `2019-Oct.csv` for historical batch/bootstrap over `[2019-10-01T00:00:00Z,2019-11-01T00:00:00Z)` and `2019-Nov.csv` for Kafka replay, without loading the same November interval through both paths. Batch schema V1 is `[Oct 01,Oct 16)` and V2 is `[Oct 16,Nov 01)`; membership comes from parsed UTC event_time independently of source order. Small sampling happens after classification, approximately 50/50 per schema, with no quota backfill when a population is short. These are design rules, not evidence of full-scale execution. Both files' actual schema, event overlap, sort order and coverage must be checked before generation. Source CSV event time alone does not reconstruct historical arrival time.
 
-Before the relevant milestone, choose (a) eligibility/scheduling rule for predictions, (b) how much late data is available at the feature cutoff, (c) event identity/dedup rule, (d) whether late corrections update offline aggregates without changing saved predictions, and (e) label maturation/completeness policy. Do not encode these unresolved choices as runtime facts.
+### OPEN decisions — resolve at the relevant component
+
+- Full event source for features/labels, separate from sampled/replicated benchmark data. Event sampling can lose purchases; replicas can shift timestamps. Neither automatically establishes historical truth.
+- Sample/snapshot cadence and user eligibility; future prediction triggering and feature-time versus prediction-time relation remain outside current DE implementation scope and unresolved.
+- Replay clock and its relation to dataset event time, wall clock and label maturation.
+- Event identity/dedup and normalization; watermark, late-event availability and snapshot emission.
+- Label horizon coverage/completeness and maturation; incomplete future coverage must not become label 0.
+- Historical feature correction/backfill/revision policy, including snapshot selection for datasets; no policy is chosen here.
+- Kafka → Lakehouse persistence implementation, offset/checkpoint/retry mapping.
+- Realtime offline/online write deployment mapping and write coordination/idempotency.
+- Offline format/Feast compatibility, TTL/freshness, materialization cursor and stale-write coordination.
+- Physical layout, retention/versioning of samples, features, labels and datasets; analytics/DWH mapping and DAG boundaries.
+
+These are target decisions, not runtime facts. Do not redesign or silently close an OPEN item while implementing another component.

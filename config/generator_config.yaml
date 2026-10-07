@@ -95,12 +95,20 @@ batch_generator:
 # 2. CẤU HÌNH CHO STREAMING DATA GENERATOR (Online Feeder - Rubric: 8 điểm)
 # ------------------------------------------------------------------------------
 streaming_generator:
-  input_csv: "2019-Oct.csv"
+  input_csv: "2019-Nov.csv"
+
+  replay:
+    seed: 42
+    events_per_second: 100
+    checkpoint_events: 1000
+    pending_limit: 100000
+    ack_limit: 10000  # Detailed ACK/readback cap; larger workloads report sample_only
+    delivery_timeout_seconds: 30
   
-  # Khoảng thời gian cho luồng Streaming (các ngày cuối tháng: 26/10 -> 31/10)
+  # Toàn bộ November theo UTC: start_date inclusive, end_date exclusive [2019-11-01, 2019-12-01)
   date_range:
-    start_date: "2019-10-26"
-    end_date: "2019-10-31"
+    start_date: "2019-11-01"
+    end_date: "2019-12-01"
 
   # Cấu hình Kafka broker
   kafka:
@@ -113,11 +121,11 @@ streaming_generator:
     discount_column: "discount_percent"
     discount_values: [4, 5, 8, 10, 12]
 
-  # Tiêm 3 lỗi streaming theo Rubric
+  # Late/duplicate thuộc scope đã duyệt; burst không triển khai
   fault_injection:
     # Lỗi 1: Burst Traffic (Flash Sale đẩy traffic x30)
     burst:
-      enabled: true
+      enabled: false
       multiplier: 30
       duration_seconds: 600
       trigger_interval_minutes: 5
