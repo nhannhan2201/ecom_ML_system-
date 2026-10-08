@@ -8,7 +8,7 @@ Bản đồ source/config cập nhật 2026-10-08 sau bounded Replay Producer ru
 
 | File | Vai trò | Giới hạn kiểm chứng |
 | --- | --- | --- |
-| `src/generator/batch_generator.py` | Batch Generator: parse UTC, classify OLD/NEW, sample rồi gọi transformation/writer hiện có | Unit + small MinIO readback PASS; medium/full chưa kiểm chứng ([evidence](docs/batch_generator_minio.md)) |
+| `src/generator/batch_generator.py` | Batch Generator: parse UTC, classify OLD/NEW, sample rồi gọi transformation/writer hiện có | Unit + small MinIO readback PASS; medium/full chưa kiểm chứng ([evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06)) |
 | `compose.yaml` | MinIO + Kafka 4.1.2 single-node KRaft; riêng named volumes và healthchecks | MinIO: small readback PASS theo evidence đã liên kết. Kafka: broker health/internal API và host metadata API đã có learner outputs; bounded CLI replay/resume/readback PASS; readback sau broker bật lại theo learner; full scale/recreate unverified |
 | `requirements.txt` | Khai báo python-dotenv 1.2.1 cho CLI | Fixture dotenv pass; upload logic không đổi |
 | `src/generator/replay_producer.py` | CLI/config, streaming CSV validation, JSON 10 fields và key user_id | Unit-tested + bounded native ACK/readback PASS ([evidence](docs/kafka_stream_replay.md)) |
@@ -37,7 +37,7 @@ flowchart LR
   FIX["Batch Generator fixture"] --> TEST["Batch Generator unit tests"] --> CLASS
 ```
 
-Sơ đồ mô tả source; nhánh small local/MinIO đã có [runtime readback](docs/batch_generator_minio.md) ngày 2026-10-06. CLI nạp root `.env` vào `os.environ`, giữ ưu tiên environment có sẵn; bucket vẫn lấy từ YAML. `--local-output-dir` dành cho small mode, ghi CSV/manifest vào đích cục bộ và tắt MinIO. Medium/full vẫn có byte target và replica transformations; chưa chạy benchmark.
+Sơ đồ mô tả source; nhánh small local/MinIO đã có [runtime readback](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) ngày 2026-10-06. CLI nạp root `.env` vào `os.environ`, giữ ưu tiên environment có sẵn; bucket vẫn lấy từ YAML. `--local-output-dir` dành cho small mode, ghi CSV/manifest vào đích cục bộ và tắt MinIO. Medium/full vẫn có byte target và replica transformations; chưa chạy benchmark.
 
 ## Component đã gỡ khỏi baseline
 
@@ -51,7 +51,7 @@ Shared `_classify_chunk` dùng UTC start/evolution/end từ config. Small mode s
 
 Giữ [ghi chú Batch Generator](docs/batch_generator.md) và fixture/tests. JSON/manifest/log evidence runtime cũ và script independent readback đã được dọn. Số liệu small runtime trong ghi chú là lịch sử; không xác nhận runtime hiện tại. Final cleanup chỉ chạy unit Batch Generator, không chạy generator trên toàn bộ CSV, MinIO hay downstream.
 
-Lần chạy mới: [Batch Generator → MinIO small runtime evidence](docs/batch_generator_minio.md), 1.020.000 dòng; schema/count/bytes và CSV SHA-256 readback PASS. Không xác nhận ≥100 GB hoặc downstream.
+Lần chạy mới: [Batch Generator → MinIO small runtime evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06), 1.020.000 dòng; schema/count/bytes và CSV SHA-256 readback PASS. Không xác nhận ≥100 GB hoặc downstream.
 
 Ghi chú component mới và evidence mới được index tại [docs/INDEX.md](docs/INDEX.md). Không bắt đầu Batch Generator — schema and deterministic fields trong cleanup này.
 
@@ -76,3 +76,10 @@ Ghi chú component mới và evidence mới được index tại [docs/INDEX.md]
 - Standalone quickstart readback/cleanup was learner-reported in chat and recorded separately in the roadmap; it is not project Stream Replay evidence.
 
 - **Current handoff (2026-10-08):** bounded replay/recovery verification complete: 2.000 source → 2.031 readback và interrupted/resumed 3.000 source → 3.041 readback. Run restart đọc lại PASS sau broker khởi động lại theo learner. Raw artifacts ignored; tracked snapshot ở evidence. Không claim total topic count, full scale, exactly-once, recreate hoặc learning component DONE. Chưa cleanup/topic cho Flink; chờ scoped proposal và learner approval.
+
+
+## Batch Generator complete-source mode — corrected fault scope
+
+Single Batch Generator CLI ingest/verify: bounded multipart transport → two final CSVs/manifest; source preservation + date schema evolution + configured duplicate injection. Manifest separates source/injected/output counts; verifier parses schema/date/count/copy pairs as well as hashes. 18 simulated-S3 unit cases PASS; learner full October runtime/readback PASS (see evidence). Previous full-source no-injection run had learner native hash readback PASS but missed requested fault scope; exact prefix/local artifacts removed; brief status in [evidence](docs/evidence/batch_generator_october.json). No Kafka changes. [Guide](docs/batch_generator.md).
+
+Source verifier now supports automatic atomic `--evidence-output` export after all checks PASS, including measured injection ratios, timing, versions/code/artifact hashes and limitations. 18 simulated-S3 tests PASS. Actual learner full October verify PASS: 42,448,764 source, 848,975 injected copies, 43,297,739 output; 5,879,140,530 CSV bytes. Source/order business identity and statistical skew not independently reconstructed.

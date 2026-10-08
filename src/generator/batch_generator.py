@@ -31,6 +31,12 @@ import json
 import shutil
 import logging
 import argparse
+import csv
+import hashlib
+import platform
+import tempfile
+from importlib.metadata import version
+from fractions import Fraction
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from dotenv import load_dotenv
@@ -828,13 +834,334 @@ class BatchDataGenerator:
             self.run_sample_mode()
 
 
+def _file_digest(path):
+    checksum = hashlib.sha256()
+    with Path(path).open("rb") as stream:
+        for block in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+            checksum.update(block)
+    return {"bytes": Path(path).stat().st_size, "sha256": checksum.hexdigest()}
+
+
+class _MultipartCSV:
+    """Bounded buffer for one final CSV object; multipart pieces are not dataset files."""
+
+    def __init__(self, client, bucket, key, part_bytes):
+        self.client, self.bucket, self.key = client, bucket, key
+        self.part_bytes = part_bytes
+        self.buffer = bytearray()
+        self.checksum, self.size, self.parts = hashlib.sha256(), 0, []
+        self.upload_id = client.create_multipart_upload(
+            Bucket=bucket, Key=key, ContentType="text/csv"
+        )["UploadId"]
+
+    def write(self, text):
+        block = text.encode("utf-8")
+        self.checksum.update(block)
+        self.size += len(block)
+        self.buffer.extend(block)
+        if len(self.buffer) >= self.part_bytes:
+            self.flush()
+        return len(text)
+
+    def flush(self):
+        if not self.buffer:
+            return
+        number = len(self.parts) + 1
+        if number > 10000:
+            raise ValueError("Multipart part limit exceeded")
+        result = self.client.upload_part(
+            Bucket=self.bucket, Key=self.key, UploadId=self.upload_id,
+            PartNumber=number, Body=bytes(self.buffer),
+        )
+        self.parts.append({"PartNumber": number, "ETag": result["ETag"]})
+        self.buffer.clear()
+
+    def finish(self):
+        self.flush()
+        self.client.complete_multipart_upload(
+            Bucket=self.bucket, Key=self.key, UploadId=self.upload_id,
+            MultipartUpload={"Parts": self.parts},
+        )
+        self.upload_id = None
+        return {"bytes": self.size, "sha256": self.checksum.hexdigest()}
+
+    def abort(self):
+        if self.upload_id:
+            self.client.abort_multipart_upload(
+                Bucket=self.bucket, Key=self.key, UploadId=self.upload_id
+            )
+            self.upload_id = None
+
+
+def ingest_source(source, directory, config, client, prefix):
+    """Stream every source row into exactly two schema-versioned MinIO objects."""
+    started_at, started_clock = datetime.now(timezone.utc).isoformat(), time.monotonic()
+    source, directory = Path(source).resolve(), Path(directory)
+    batch = config["batch_generator"]
+    evolution = batch["fault_injection"]["schema_evolution"]
+    values = [batch["date_range"]["start_timestamp"], evolution["effective_timestamp"],
+              batch["date_range"]["end_timestamp"]]
+    if any(not isinstance(value, str) or not value.endswith("Z") for value in values):
+        raise ValueError("Source boundaries must be explicit UTC ending in Z")
+    start, boundary, end = [datetime.fromisoformat(value.replace("Z", "+00:00")) for value in values]
+    if not start < boundary < end or not evolution["enabled"] or evolution["new_column"] != "discount_percent":
+        raise ValueError("Invalid date/schema contract")
+    discounts = evolution["discount_values"]
+    if not discounts or any(type(value) is not int for value in discounts):
+        raise ValueError("discount_values must be nonempty integers")
+    duplicate = batch["fault_injection"]["duplicate"]
+    rate = Fraction(str(duplicate["rate"])) if duplicate["enabled"] else Fraction(0)
+    if not 0 <= rate <= 1:
+        raise ValueError("Duplicate rate must be between 0 and 1")
+    if batch["fault_injection"].get("skew", {}).get("enabled") or batch["fault_injection"].get("drift", {}).get("enabled"):
+        raise ValueError("Source mode preserves natural skew; synthetic skew/drift must be disabled")
+    part_bytes = batch["source"]["multipart_size_mb"] * 1024**2
+    if not 5 * 1024**2 <= part_bytes <= 512 * 1024**2:
+        raise ValueError("multipart_size_mb must be between 5 and 512")
+    prefix = _source_prefix(config, prefix)
+    bucket = batch["minio"]["bucket_name"]
+    client.head_bucket(Bucket=bucket)
+    if client.list_objects_v2(Bucket=bucket, Prefix=prefix + "/", MaxKeys=1).get("KeyCount", 0):
+        raise ValueError("Destination prefix is nonempty; refusing overwrite")
+    if client.list_multipart_uploads(Bucket=bucket, Prefix=prefix + "/", MaxUploads=1).get("Uploads"):
+        raise ValueError("Destination has unfinished multipart uploads; choose a new prefix")
+    directory.mkdir(parents=True, exist_ok=False)
+    before = _file_digest(source)
+    counts, sinks = {"old": 0, "new": 0}, {}
+    duplicates = {"old": 0, "new": 0}
+    try:
+        with source.open(newline="", encoding="utf-8") as stream:
+            reader = csv.reader(stream, strict=True)
+            if next(reader, None) != CANONICAL_9_COLUMNS:
+                raise ValueError("Unexpected source header")
+            for group in counts:
+                sinks[group] = _MultipartCSV(client, bucket, prefix + "/raw_events_" + group + ".csv", part_bytes)
+            writers = {group: csv.writer(sink) for group, sink in sinks.items()}
+            writers["old"].writerow(CANONICAL_9_COLUMNS)
+            writers["new"].writerow(CANONICAL_10_COLUMNS)
+            for record, row in enumerate(reader, 1):
+                if len(row) != 9:
+                    raise ValueError(f"Record {record}: expected 9 fields")
+                try:
+                    timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+                except ValueError as error:
+                    raise ValueError(f"Record {record}: invalid UTC timestamp") from error
+                if not start <= timestamp < end:
+                    raise ValueError(f"Record {record}: outside configured October interval")
+                group = "old" if timestamp < boundary else "new"
+                if group == "new":
+                    identity = f"{batch['base_seed']}:{record}".encode()
+                    index = int.from_bytes(hashlib.sha256(identity).digest()[:8], "big") % len(discounts)
+                    row = row + [discounts[index]]
+                writers[group].writerow(row)
+                counts[group] += 1
+                # Exact incremental quota per schema; copy the already-adapted row verbatim.
+                quota = counts[group] * rate.numerator // rate.denominator
+                if quota > duplicates[group]:
+                    writers[group].writerow(row)
+                    duplicates[group] += 1
+                if record % 1000000 == 0:
+                    print(f"Processed {record:,} source records", flush=True)
+        if _file_digest(source) != before:
+            raise ValueError("Source changed during ingestion")
+        objects = {"raw_events_" + group + ".csv": sink.finish() for group, sink in sinks.items()}
+        manifest = {
+            "status": "UPLOADED_NOT_VERIFIED",
+            "created_timestamp": datetime.now(timezone.utc).isoformat(),
+            "timing": {"started_timestamp": started_at,
+                       "finished_timestamp": datetime.now(timezone.utc).isoformat(),
+                       "elapsed_seconds": time.monotonic() - started_clock,
+                       "scope": "ingest preflight, source hashes, CSV processing and CSV uploads; excludes manifest publication and subsequent verification"},
+            "bucket": bucket, "prefix": prefix,
+            "source": {"path": str(source), **before}, "counts": counts,
+            "total_records": sum(counts.values()), "objects": objects,
+            "boundaries": dict(zip(("start", "evolution", "end"), values)),
+            "seed": batch["base_seed"], "discount_values": discounts,
+            "discount_rule": "sha256(seed:1-based-source-record), first 8 bytes modulo configured values",
+            "injected_duplicates": sum(duplicates.values()),
+            "duplicate_counts": duplicates, "duplicate_rate": float(rate),
+            "duplicate_rule": "per-schema floor(source_count * rate); adjacent identical adapted-row copy at each quota increment",
+            "output_counts": {group: counts[group] + duplicates[group] for group in counts},
+            "sampling": False, "replication": False,
+            "limitations": "Natural source duplicates retained; no semantic source-quality or feature/label coverage guarantee.",
+        }
+        payload = (json.dumps(manifest, indent=2) + "\n").encode()
+        (directory / "manifest.json").write_bytes(payload)
+        client.put_object(Bucket=bucket, Key=prefix + "/manifest.json", Body=payload, ContentType="application/json")
+        print(json.dumps({"status": manifest["status"], "source_counts": counts, "output_counts": manifest["output_counts"], "injected_duplicates": manifest["injected_duplicates"], "total_records": manifest["total_records"]}))
+    except BaseException:
+        for sink in sinks.values():
+            try:
+                sink.abort()
+            except Exception:
+                logger.warning("Could not abort multipart upload; inspect destination before cleanup")
+        raise
+
+
+def _source_prefix(config, prefix):
+    prefix = prefix.strip("/")
+    root = config["batch_generator"]["source"]["prefix_root"].rstrip("/")
+    if not prefix.startswith(root + "/") or any(part in ("", ".", "..") for part in prefix.split("/")):
+        raise ValueError("Use a fresh run-id under the configured source prefix_root")
+    return prefix
+
+
+def _source_client(config):
+    load_dotenv(Path(__file__).resolve().parents[2] / ".env", override=False)
+    storage = config["batch_generator"]["minio"]
+    access = os.environ.get("MINIO_ACCESS_KEY") or os.environ.get("AWS_ACCESS_KEY_ID")
+    secret = os.environ.get("MINIO_SECRET_KEY") or os.environ.get("AWS_SECRET_ACCESS_KEY")
+    if not access or not secret:
+        raise ValueError("MinIO credentials required; no fallback credentials")
+    return boto3.client("s3", endpoint_url=os.environ.get("MINIO_ENDPOINT") or storage["endpoint_url"],
+                        aws_access_key_id=access, aws_secret_access_key=secret, region_name="us-east-1")
+
+
+def _write_json_atomic(path, value):
+    """Replace a report only after a complete JSON file has been written."""
+    path = Path(path)
+    if not path.parent.is_dir():
+        raise ValueError(f"Report directory must already exist: {path.parent}")
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=path.parent,
+                                         prefix="." + path.name + ".", delete=False) as stream:
+            temporary = Path(stream.name)
+            json.dump(value, stream, indent=2)
+            stream.write("\n")
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, path)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def verify_source(directory, config, client, prefix, evidence_output=None):
+    started_at, started_clock = datetime.now(timezone.utc).isoformat(), time.monotonic()
+    directory = Path(directory)
+    if evidence_output:
+        evidence_path = Path(evidence_output).resolve()
+        if evidence_path in {(directory / name).resolve() for name in ("manifest.json", "readback.json")}:
+            raise ValueError("Evidence output must differ from runtime manifest/readback")
+        if not evidence_path.parent.is_dir() or evidence_path.suffix != ".json":
+            raise ValueError("Evidence output requires an existing directory and .json suffix")
+    # Remove only a previous verification report, so a failed rerun cannot leave stale PASS.
+    (directory / "readback.json").unlink(missing_ok=True)
+    manifest_path = directory / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    prefix = _source_prefix(config, prefix)
+    bucket = config["batch_generator"]["minio"]["bucket_name"]
+    if (bucket, prefix) != (manifest["bucket"], manifest["prefix"]):
+        raise ValueError("Destination differs from manifest")
+    expected_objects = {**manifest["objects"], "manifest.json": _file_digest(manifest_path)}
+    results, audits = {}, {}
+    for name, expected in expected_objects.items():
+        response = client.get_object(Bucket=bucket, Key=prefix + "/" + name)
+        checksum, size = hashlib.sha256(), 0
+
+        class HashingReader(io.RawIOBase):
+            def readable(self):
+                return True
+
+            def readinto(self, buffer):
+                nonlocal size
+                block = response["Body"].read(len(buffer))
+                checksum.update(block)
+                size += len(block)
+                buffer[:len(block)] = block
+                return len(block)
+
+        try:
+            if name.endswith(".csv"):
+                group = "old" if name == "raw_events_old.csv" else "new"
+                fields = CANONICAL_9_COLUMNS if group == "old" else CANONICAL_10_COLUMNS
+                start, boundary, end = [datetime.fromisoformat(manifest["boundaries"][key].replace("Z", "+00:00"))
+                                        for key in ("start", "evolution", "end")]
+                rate = Fraction(str(manifest.get("duplicate_rate", 0)))
+                originals = copies = rows = 0
+                with io.TextIOWrapper(io.BufferedReader(HashingReader()), encoding="utf-8", newline="") as stream:
+                    reader = csv.reader(stream, strict=True)
+                    if next(reader, None) != fields:
+                        raise ValueError(f"Schema header mismatch: {name}")
+
+                    def check_row(row):
+                        if len(row) != len(fields):
+                            raise ValueError(f"Field count mismatch: {name}")
+                        timestamp = datetime.strptime(row[0], "%Y-%m-%d %H:%M:%S UTC").replace(tzinfo=timezone.utc)
+                        low, high = (start, boundary) if group == "old" else (boundary, end)
+                        if not low <= timestamp < high:
+                            raise ValueError(f"Schema date membership mismatch: {name}")
+                        if group == "new" and int(row[-1]) not in manifest["discount_values"]:
+                            raise ValueError(f"Invalid discount: {name}")
+
+                    for row in reader:
+                        check_row(row)
+                        originals += 1
+                        rows += 1
+                        quota = originals * rate.numerator // rate.denominator
+                        if quota > copies:
+                            copy = next(reader, None)
+                            if copy != row:
+                                raise ValueError(f"Injected duplicate pair mismatch: {name}")
+                            copies += 1
+                            rows += 1
+                if originals != manifest["counts"][group] or copies != manifest.get("duplicate_counts", {}).get(group, 0):
+                    raise ValueError(f"Source/duplicate count mismatch: {name}")
+                if rows != manifest.get("output_counts", manifest["counts"])[group]:
+                    raise ValueError(f"Output count mismatch: {name}")
+                audits[group] = {"schema_date_count": "PASS", "source_records": originals,
+                                 "injected_copy_pairs": copies, "output_records": rows,
+                                 "injected_duplicate_rate_per_source": copies / originals if originals else None,
+                                 "injected_duplicate_fraction_of_output": copies / rows if rows else None,
+                                 "natural_duplicates": "NOT_AUDITED"}
+            else:
+                for block in response["Body"].iter_chunks(chunk_size=8 * 1024 * 1024):
+                    checksum.update(block)
+                    size += len(block)
+        finally:
+            response["Body"].close()
+        observed = {"bytes": size, "sha256": checksum.hexdigest()}
+        if observed != expected:
+            raise ValueError(f"Readback mismatch: {name}")
+        results[name] = observed
+        print(f"READBACK_PASS {name}", flush=True)
+    report = {"status": "READBACK_PASS", "verified_timestamp": datetime.now(timezone.utc).isoformat(),
+              "bucket": bucket, "prefix": prefix, "counts": manifest["counts"], "objects": results, "audits": audits,
+              "timing": {"started_timestamp": started_at,
+                         "finished_timestamp": datetime.now(timezone.utc).isoformat(),
+                         "elapsed_seconds": time.monotonic() - started_clock,
+                         "scope": "verification preflight and complete remote hash/CSV audit; excludes report file write"}}
+    _write_json_atomic(directory / "readback.json", report)
+    if evidence_output:
+        evidence = {
+            "status": "VERIFIED_DECLARED_CHECKS",
+            "generated_timestamp": datetime.now(timezone.utc).isoformat(),
+            "provenance": "Automatically generated by Batch Generator verify from full remote object readback; not manual measurements.",
+            "runtime": {"python": platform.python_version(), "boto3": version("boto3"),
+                        "botocore": version("botocore"),
+                        "code": _file_digest(Path(__file__))},
+            "run_dir": str(directory),
+            "artifact_hashes": {"manifest.json": _file_digest(manifest_path),
+                                "readback.json": _file_digest(directory / "readback.json")},
+            "manifest": manifest, "readback": report,
+            "limitations": ["Verifier uses producer manifest and declared injection schedule; not an independent reconstruction of all source events.",
+                            "Natural duplicates, statistical skew and source business identity are not audited.",
+                            "No Spark dedup/feature/label runtime, no >=100 GB benchmark or full-rubric completion established.",
+                            "Timing scopes exclude final report publication; not a throughput benchmark."],
+        }
+        _write_json_atomic(evidence_path, evidence)
+        print(f"EVIDENCE_WRITTEN {evidence_path}", flush=True)
+
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="E-Commerce Batch Data Generator & Benchmark Scaler")
     parser.add_argument(
         "--mode",
-        choices=["small", "medium", "full"],
+        choices=["small", "medium", "full", "source"],
         default=None,
-        help="Generation mode: small (1M), medium (5GB), full (>=100GB)",
+        help="small: sample; medium/full: benchmark; source: complete October with date-based schema evolution and configured duplicates",
     )
     parser.add_argument("--sample-size", type=int, default=None, help="Custom sample size (for small/medium sample)")
     parser.add_argument("--target-size-gb", type=float, default=None, help="Target benchmark size in GB")
@@ -847,7 +1174,31 @@ if __name__ == "__main__":
     parser.add_argument(
         "--stats-only", action="store_true", help="Run transformations and write manifest without uploading to MinIO"
     )
+    parser.add_argument("--action", choices=["ingest", "verify"], default=None,
+                        help="Required with --mode source")
+    parser.add_argument("--run-dir", help="Source-mode local artifacts directory")
+    parser.add_argument("--prefix", help="Source-mode fresh MinIO destination prefix")
+    parser.add_argument("--evidence-output", help="Verify only: atomically export verified evidence JSON")
     args = parser.parse_args()
+    if args.mode == "source":
+        if not args.action or not args.run_dir:
+            parser.error("source mode requires --action and --run-dir")
+        if any((args.sample_size is not None, args.target_size_gb is not None,
+                args.local_output_dir, args.skewed, args.dry_run, args.stats_only)):
+            parser.error("source mode cannot use sampling, benchmark or fault options")
+        if args.evidence_output and args.action != "verify":
+            parser.error("--evidence-output requires --action verify")
+        config = yaml.safe_load(Path(args.config).read_text())
+        if not args.prefix:
+            parser.error("source mode requires --prefix")
+        client = _source_client(config)
+        if args.action == "ingest":
+            ingest_source(config["batch_generator"]["input_csv"], args.run_dir, config, client, args.prefix)
+        else:
+            verify_source(args.run_dir, config, client, args.prefix, args.evidence_output)
+        sys.exit(0)
+    if args.action or args.run_dir or args.prefix or args.evidence_output:
+        parser.error("--action, --run-dir and --prefix require --mode source")
 
     load_dotenv(
         dotenv_path=Path(__file__).resolve().parents[2] / ".env",

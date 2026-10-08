@@ -55,13 +55,10 @@ Mỗi item cần link code/config, command/input/version/time, actual result, sc
 
 ## Current status
 
-- **Current component / current stop (2026-10-08):** Kafka Stream Replay — **bounded implementation/runtime verification complete**, chưa toàn learning component DONE. [Evidence/handoff](docs/kafka_stream_replay.md): 2.000 source → 2.031 ACK/readback; run interrupted checkpoint 500 (24 pending late) → resume tổng 3.000 source → 3.041 ACK/readback; đọc lại run restart sau broker bật lại PASS theo learner. Full scale/exactly-once/recreate và independent full-topic duplicate audit chưa verify. Không chạy thêm, cleanup hoặc tự chuyển Flink. Next session: đọc evidence/current contract; nếu learner muốn sang Flink, giải thích scoped purpose/I-O/files/native concepts và chờ approval trước code. Input/topic/offset plan cho Flink chưa chốt. Roadmap order/priorities và architecture freeze giữ nguyên.
-- **Previous evidence:** Batch Generator → MinIO small readback and 9 unit tests PASS; [evidence](docs/batch_generator_minio.md). ≥100 GB, duplicate/skew audit and earlier learning limitations remain unresolved; advancing by learner request does not mark the whole component DONE.
-- **Design:** DE target ends at Feature–Label Dataset: four 15m features plus finalized 1h labels for October/November, keyed by `(user_id,feature_timestamp)`. Training/model/prediction are downstream. See [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md).
-- **Contract:** the root [DATA_CONTRACT.md](DATA_CONTRACT.md) now records current source declarations and the target schema separately.
-- **Source audit:** root docs reorganized and current generator/Spark/Flink/Feast/DWH paths inspected. This was static inspection only; no pipeline/test was run in this documentation task.
-- **Historical runtime progress (artifacts removed during rebuild cleanup):** [Batch Generator small local batch readback](docs/batch_generator.md): 1,000 selected source rows, 1,020 rows after existing transformation; all output timestamps/schema memberships pass. No MinIO/downstream/full-output verification.
-- **Unresolved:** all [target OPEN decisions](TARGET_ARCHITECTURE.md#open-decisions--resolve-at-the-relevant-component) remain open. November date coverage was inspected in session (see log below), but event overlap/order/identity, arrival semantics, full feature-label source and downstream readback are not thereby verified.
+- **Current stop (2026-10-08): Batch Generator full October → MinIO verification PASS.** 42,448,764 source + 848,975 injected copies = 43,297,739 output rows. Full remote hash/schema/date/count/scheduled-copy-pair checks PASS; automatic [evidence](docs/evidence/batch_generator_october.json). Learner-run Python 3.11.17, boto3 1.34.0. No local CSV output. Learning explanation and final diff review remain; no blanket component/rubric DONE.
+- **Kafka:** bounded replay/recovery/readback remains verified; unchanged, no rerun. [Evidence](docs/kafka_stream_replay.md).
+- **Next:** review/save this Batch Generator work before proposing Spark Raw → Bronze. No automatic next-component implementation.
+- **Remaining:** natural duplicate identity/count, statistical skew, ≥100 GB benchmark, downstream dedup/source preservation, complete lookback/horizon coverage, sample cadence and feature-store compatibility remain unverified/OPEN. Full October source selection is decided; it does not close these policies.
 
 ## Component learning log
 
@@ -103,7 +100,7 @@ Batch Generator record is below. For later milestones, use the same concise reco
 
 ### Batch Generator → MinIO Raw Storage — 2026-10-06
 
-- **Purpose / input → output:** October CSV → sample 1.000.000 → OLD/NEW transformation → 1.020.000 dòng trong MinIO raw và local; [diagram/key files/evidence](docs/batch_generator_minio.md).
+- **Purpose / input → output:** October CSV → sample 1.000.000 → OLD/NEW transformation → 1.020.000 dòng trong MinIO raw và local; [diagram/key files/evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06).
 - **Changes/reasons:** Compose chỉ MinIO với named volume và bash HTTP healthcheck (image thiếu curl); CLI nạp root `.env` bằng python-dotenv 1.2.1 trước constructor, giữ `os.environ` và shell precedence. Không đổi upload logic.
 - **Run:** learner chạy `python src/generator/batch_generator.py --mode small`, log 14:33:29–14:36:09 Asia/Ho_Chi_Minh, report 159,69s; đây không phải benchmark.
 - **Verification:** `docker inspect --format '{{.State.Health.Status}}' ecom_ml_system-minio-1` → healthy. Inline Python + container mc stat/ls/cat → exit 0: bucket/3 objects/manifest PASS, mỗi CSV 510.000 dòng, 9/10 cột, remote CSV SHA-256 bằng local, tổng 137.333.941 bytes khớp manifest. `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 9 passed in 1.07s.
@@ -145,3 +142,51 @@ Batch Generator record is below. For later milestones, use the same concise reco
 - **Learning:** learner explained partition-local offset, end_flush when bounded progress stops, ACK versus readback; questions about callbacks, code/test syntax remain. Bounded verification completed; no claim learner can independently explain full component, no blanket component/full-rubric DONE.
 - **Docs changed:** CURRENT_IMPLEMENTATION, DATA_CONTRACT status only, RUBRIC rows 9–10 bounded evidence only, this roadmap, docs index and Kafka component note/snapshot. TARGET_ARCHITECTURE and code/config unchanged. Documentation checks: local links/anchors and git diff --check; actual results reported with commit handoff.
 - **Current state / next:** preserve existing topic and both artifacts. Two runs overlap source prefix; journal ACK total 5.072 is not measured topic count. Flink test topic or cleanup is not approved. Continue only with learner-scoped Flink proposal or remaining Kafka question; never auto-run full replay or delete state.
+
+
+### Batch Generator — complete October source mode (2026-10-08)
+
+- Learner-approved consolidation: one Batch Generator CLI/config/test module/component note. Preserve complete October as historical source; benchmark lane retains fault/scale requirements. No additional source.csv upload; keep original local and hash.
+- Flow: configured CSV → source prepare → local OLD/NEW + manifest → fresh MinIO prefix → streaming hash readback. Diagram/commands/common failures in [Batch Generator guide](docs/batch_generator.md).
+- Source implementation only; no full October prepare/upload/readback, Kafka workload, bucket cleanup or commit. Learner explanation pending; not DONE.
+- Verification: initial consolidation test run had 9 passed/3 failed due to helper rename; corrected before final checks. Final check: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 12 passed in 1.40s, Python 3.13.12; `python -m src.generator.batch_generator --help` → exit 0; local file links and `git diff --check` PASS.
+- Docs ownership: architecture source direction, contract/schema, implementation source map, this progress log, existing component guide. Rubric not upgraded; no new external evidence.
+
+### Batch Generator — generated local output cleanup (2026-10-08)
+
+- Learner explicitly authorized cleaning `data/` before a future complete October run. Inspected files/references; removed six generated CSV/manifest files and empty subdirectories, retained empty `data/`. Freed 137,474,679 bytes. No source CSV, MinIO, Kafka artifact, tracked evidence or user source changes removed.
+- Historical small-run OLD/NEW hashes matched evidence before removal; local cleanup status added to existing MinIO evidence note. Full October execution/readback still pending; sampled evidence remains historical, ≥100 GB still unverified.
+- Verification: filesystem assertion confirms `data/` empty; documentation-only cleanup, no tests or services run. `git diff --check` checked after update.
+
+### Batch Generator — direct full October MinIO workflow (2026-10-08)
+
+- Supersedes the earlier unexecuted source prepare/upload CLI: only `--action ingest|verify`, same generator/config/tests/component note. Reads complete source into two bounded RAM multipart buffers, creates two final schema-versioned CSV objects and manifest. No full local CSV outputs or new files/components.
+- Invariants: preserve source fields/multiplicity, UTC OLD/NEW boundary, no sampling/replicas/fault injection; abort unfinished uploads on caught failure, never overwrite existing prefix/local run directory. Manifest after both objects complete; independent full hash readback required. No resume; abrupt power loss can leave incomplete uploads, completed objects never auto-deleted.
+- Tests: 14 cases PASS on Python 3.13.12 including prior nine cases, multipart assembly, boundary/conservation, corruption and abort paths with simulated S3. CLI help PASS. Source/config docs synchronized; no October/service workload, no commit; learner runtime/explanation pending.
+- Old source preparation instructions are superseded and must not be run. Small/medium/full output behavior unchanged. Full October does not satisfy ≥100 GB benchmark criterion. Actual runtime evidence not yet recorded.
+
+### Batch Generator — correct duplicate fault scope and replace run (2026-10-08)
+
+- Learner clarified that full October must include requested rubric faults. Previous no-injection source instructions above are superseded; do not follow them. Preserve every source record plus UTC schema evolution, configured exact per-schema duplicate rate 2%, natural skew. No sampling/replicas/synthetic skew/drift. Copy already-adapted rows verbatim; manifest separates source/injected/output counts. Downstream business identity/dedup and coverage still OPEN.
+- Learner completed original full ingest 42,448,764 records and byte/hash verify; missing injection makes it insufficient for requested scope. Superseded run summarized in [pending corrected evidence](docs/evidence/batch_generator_october.json); learner later authorized dropping raw historical snapshots. Exact-prefix cleanup: inspected three keys/sizes, no incomplete multipart, deleted three objects and list readback empty. Removed only corresponding local manifest/readback and empty directory; no bucket/Kafka/source/sampled changes.
+- Updated same generator/test/config/component docs. Verify now parses remote schema/date/field/discount/count and scheduled identical copy pairs in the same pass as hashes; natural duplicates explicitly NOT_AUDITED. No extra code/test module.
+- Exact test: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 16 passed in 1.46s, Python 3.13.12, simulated S3 only. Corrected full runtime and learner explanation pending; no rubric PASS upgrade/no commit. Expected future source 42,448,764 + injected 848,975 = output 43,297,739, not an observed result.
+
+### Batch Generator — consolidate evidence and measure runtime (2026-10-08)
+
+Learner authorized removal of old Batch Generator MinIO note/manifest evidence and reduction of no-injection run to one superseded line. Removed those two files; retained historical commands/results here, redirected links, downgraded affected rubric entries to historical record/current verification pending. One Batch Generator component note and one pending current evidence JSON remain; Kafka evidence unchanged. Ingest and verify now measure separate start/end UTC timestamps and monotonic elapsed seconds with explicit scopes. No new workload run, commit or full-rubric claim.
+
+Verification: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 16 passed in 1.47s (Python 3.13.12, simulated S3); local file links and `git diff --check` PASS. No external workload.
+
+### Batch Generator — automatic verified evidence export (2026-10-08)
+
+- Learner requested completion before corrected full run. Same generator/test/note only: optional source verify `--evidence-output` atomically publishes manifest + readback, audit ratios/timing, versions and code/artifact hashes after all remote checks pass. Failed verification leaves previous evidence unchanged; no manual measurements/auto-commit.
+- Exact check: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py -q -p no:cacheprovider` → 18 passed in 1.45s, Python 3.13.12, simulated S3. CLI help PASS, local file links and `git diff --check` PASS. Corrected full ingest/readback/explanation pending; no Kafka or full October workload run by agent.
+
+### Batch Generator — full October actual runtime handoff (2026-10-08)
+
+- Learner ran the ingest/verify commands in [component guide](docs/batch_generator.md), run `20261008-04`, bucket ecommerce-raw, prefix source/rees46/2019-10/20261008-04. Actual automatically generated [evidence](docs/evidence/batch_generator_october.json) is authoritative; agent inspected local reports/hashes, did not rerun workload.
+- Input/output: source 42,448,764 (OLD 20,442,805; NEW 22,005,959); injected 848,975 (408,856/440,119); outputs 43,297,739 (20,851,661/22,446,078). Two CSVs total 5,879,140,530 bytes; no local CSV output. Remote hash/bytes, header/field count, UTC membership, discount membership and scheduled identical-copy pairs PASS.
+- Learner environment Python 3.11.17, boto3 1.34.0, botocore 1.34.162. Ingest 10:33:26–10:43:10 local (583.4097s); verify 10:43:28–10:50:00 local (391.7169s), 2026-10-08 Asia/Ho_Chi_Minh, per artifact clocks. Scopes exclude final report publication, not benchmark.
+- Checks: evidence manifest/readback equal actual local JSON; code/artifact SHA-256 match; count/quota/ratio/time assertions PASS, source file size matches (no fresh source hash scan); git diff --check and local file links PASS. 18 simulated-S3 tests previously PASS, distinct from learner actual runtime.
+- Docs: component/index, CURRENT_IMPLEMENTATION, DATA_CONTRACT status, README, rubric rows 6–8, this log updated. Design source direction unchanged in this handoff. Do not claim natural-duplicate/skew/scale/Spark verification. Stop before Spark; no commit by agent per AGENTS.md.

@@ -1,11 +1,14 @@
 """Batch Generator only: classification and sampling, plus isolated transformation handoff."""
 from pathlib import Path
 import json
+import csv
+import io
+import yaml
 
 import pandas as pd
 import pytest
 
-from src.generator.batch_generator import BatchDataGenerator, CANONICAL_9_COLUMNS, CANONICAL_10_COLUMNS
+from src.generator.batch_generator import BatchDataGenerator, CANONICAL_9_COLUMNS, CANONICAL_10_COLUMNS, ingest_source, verify_source, _MultipartCSV
 
 FIXTURE = Path(__file__).parent / "fixtures/batch_generator_october_boundaries.csv.fixture"
 EXPECTED = ["NEW", "EXCLUDED", "OLD", "OLD", "EXCLUDED", "NEW", "OLD", "INVALID",
@@ -105,3 +108,182 @@ def test_malformed_timestamp_is_not_accepted():
     frame = pd.DataFrame({"event_time": [None, "2019-10-32 00:00:00 UTC",
                                         "2019-10-16 00:00:00", "2019-10-16 25:00:00 UTC"]})
     assert generator()._classify_chunk(frame).eq("INVALID").all()
+
+
+class MemoryMinIO:
+    """In-memory S3 transport; never connects to an external service."""
+
+    def __init__(self):
+        self.objects, self.uploads = {}, {}
+        self.aborted = 0
+        self.fail_part = False
+
+    def head_bucket(self, **kwargs):
+        return {}
+
+    def list_objects_v2(self, Prefix, **kwargs):
+        return {"KeyCount": sum(key.startswith(Prefix) for key in self.objects)}
+
+    def list_multipart_uploads(self, **kwargs):
+        return {}
+
+    def create_multipart_upload(self, Key, **kwargs):
+        self.uploads[Key] = []
+        return {"UploadId": Key}
+
+    def upload_part(self, Key, Body, **kwargs):
+        if self.fail_part:
+            raise RuntimeError("injected upload failure")
+        self.uploads[Key].append(Body)
+        return {"ETag": str(len(self.uploads[Key]))}
+
+    def complete_multipart_upload(self, Key, **kwargs):
+        self.objects[Key] = b"".join(self.uploads.pop(Key))
+
+    def abort_multipart_upload(self, Key, **kwargs):
+        self.uploads.pop(Key, None)
+        self.aborted += 1
+
+    def put_object(self, Key, Body, **kwargs):
+        self.objects[Key] = Body
+
+    def get_object(self, Key, **kwargs):
+        class Body(io.BytesIO):
+            def iter_chunks(self, chunk_size):
+                while block := self.read(chunk_size):
+                    yield block
+        return {"Body": Body(self.objects[Key])}
+
+
+def source_fixture(tmp_path, rows):
+    source = tmp_path / "input.csv"
+    with source.open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(CANONICAL_9_COLUMNS)
+        writer.writerows(rows)
+    return source
+
+
+def test_boundary_and_conservation(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    rows = [
+        ["2019-10-16 00:00:00 UTC", "purchase", "1", "2", "", "", "12.30", "3", ""],
+        ["2019-10-15 23:59:59 UTC", "view", "1", "2", "", "", "12.30", "3", ""],
+    ]
+    rows.append(rows[0].copy())
+    source = source_fixture(tmp_path, rows)
+    before = source.read_bytes()
+    output, client, prefix = tmp_path / "run", MemoryMinIO(), "source/rees46/2019-10/test"
+    ingest_source(source, output, config, client, prefix)
+    old = list(csv.reader(io.StringIO(client.objects[prefix + "/raw_events_old.csv"].decode())))
+    new = list(csv.reader(io.StringIO(client.objects[prefix + "/raw_events_new.csv"].decode())))
+    assert old == [CANONICAL_9_COLUMNS, rows[1]]
+    assert new[0] == CANONICAL_10_COLUMNS
+    assert [row[:9] for row in new[1:]] == [rows[0], rows[2]]
+    assert all(int(row[9]) in [4, 5, 8, 10, 12] for row in new[1:])
+    assert source.read_bytes() == before
+    assert {p.name for p in output.iterdir()} == {"manifest.json"}
+    assert json.loads((output / "manifest.json").read_text())["total_records"] == 3
+    verify_source(output, config, client, prefix)
+    assert json.loads((output / "readback.json").read_text())["status"] == "READBACK_PASS"
+    with pytest.raises(ValueError, match="nonempty"):
+        ingest_source(source, tmp_path / "another", config, client, prefix)
+    client.objects[prefix + "/raw_events_old.csv"] += b"corrupt"
+    with pytest.raises(ValueError, match="mismatch"):
+        verify_source(output, config, client, prefix)
+
+
+@pytest.mark.parametrize("timestamp", ["bad", "2019-11-01 00:00:00 UTC"])
+def test_invalid_source_aborts_without_complete_manifest(tmp_path, timestamp):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    source = source_fixture(tmp_path, [[timestamp, "view", "1", "2", "", "", "1", "3", ""]])
+    client = MemoryMinIO()
+    with pytest.raises(ValueError):
+        ingest_source(source, tmp_path / "run", config, client, "source/rees46/2019-10/test")
+    assert not (tmp_path / "run/manifest.json").exists()
+    assert not client.objects and not client.uploads
+    assert client.aborted == 2
+
+
+def test_upload_failure_aborts_unfinished_objects(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    source = source_fixture(tmp_path, [])
+    client = MemoryMinIO()
+    client.fail_part = True
+    with pytest.raises(RuntimeError, match="injected"):
+        ingest_source(source, tmp_path / "run", config, client, "source/rees46/2019-10/test")
+    assert not client.uploads and not client.objects
+    assert not (tmp_path / "run/manifest.json").exists()
+
+
+def test_multipart_pieces_form_one_object():
+    client = MemoryMinIO()
+    sink = _MultipartCSV(client, "bucket", "one.csv", 5)
+    sink.write("hello")
+    sink.write("world")
+    sink.write("!")
+    result = sink.finish()
+    assert client.objects == {"one.csv": b"helloworld!"}
+    assert result["bytes"] == 11
+
+
+def test_source_duplicate_quota_and_exact_copies(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    rows = [[date, "view", str(i), "2", "", "", "1", "3", ""]
+            for date in ["2019-10-15 23:59:59 UTC", "2019-10-16 00:00:00 UTC"]
+            for i in range(101)]
+    source = source_fixture(tmp_path, rows)
+    client, prefix = MemoryMinIO(), "source/rees46/2019-10/duplicate"
+    ingest_source(source, tmp_path / "run", config, client, prefix)
+    manifest = json.loads((tmp_path / "run/manifest.json").read_text())
+    assert manifest["timing"]["elapsed_seconds"] >= 0
+    assert manifest["timing"]["started_timestamp"] <= manifest["timing"]["finished_timestamp"]
+    assert manifest["counts"] == {"old": 101, "new": 101}
+    assert manifest["duplicate_counts"] == {"old": 2, "new": 2}
+    assert manifest["output_counts"] == {"old": 103, "new": 103}
+    evidence_path = tmp_path / "evidence.json"
+    verify_source(tmp_path / "run", config, client, prefix, evidence_path)
+    evidence = json.loads(evidence_path.read_text())
+    assert evidence["status"] == "VERIFIED_DECLARED_CHECKS"
+    assert evidence["manifest"]["injected_duplicates"] == 4
+    assert evidence["readback"]["audits"]["old"]["injected_duplicate_rate_per_source"] == 2 / 101
+    assert len(evidence["runtime"]["code"]["sha256"]) == 64
+    audit = json.loads((tmp_path / "run/readback.json").read_text())["audits"]
+    assert audit["new"]["injected_copy_pairs"] == 2
+    assert json.loads((tmp_path / "run/readback.json").read_text())["timing"]["elapsed_seconds"] >= 0
+    for group in ("old", "new"):
+        output = list(csv.reader(io.StringIO(client.objects[prefix + "/raw_events_" + group + ".csv"].decode())))[1:]
+        assert output[49] == output[50]
+        assert output[100] == output[101]
+        originals = [row[:9] for i, row in enumerate(output) if i not in (50, 101)]
+        assert originals == rows[:101] if group == "old" else originals == rows[101:]
+
+
+def test_source_duplicate_disabled(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    config["batch_generator"]["fault_injection"]["duplicate"]["enabled"] = False
+    source = source_fixture(tmp_path, [["2019-10-01 00:00:00 UTC", "view", "1", "2", "", "", "1", "3", ""]] * 100)
+    client = MemoryMinIO()
+    ingest_source(source, tmp_path / "run", config, client, "source/rees46/2019-10/test")
+    assert json.loads((tmp_path / "run/manifest.json").read_text())["injected_duplicates"] == 0
+
+
+def test_failed_verify_does_not_publish_evidence(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    source = source_fixture(tmp_path, [["2019-10-01 00:00:00 UTC", "view", "1", "2", "", "", "1", "3", ""]])
+    client, prefix = MemoryMinIO(), "source/rees46/2019-10/test"
+    ingest_source(source, tmp_path / "run", config, client, prefix)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text('{"status":"PENDING"}')
+    client.objects[prefix + "/raw_events_old.csv"] = b"invalid header\n"
+    with pytest.raises(ValueError, match="header"):
+        verify_source(tmp_path / "run", config, client, prefix, evidence)
+    assert json.loads(evidence.read_text())["status"] == "PENDING"
+    assert not (tmp_path / "run/readback.json").exists()
+    assert not list(tmp_path.glob(".evidence.json.*"))
+
+
+def test_evidence_cannot_overwrite_manifest(tmp_path):
+    config = yaml.safe_load(Path("config/generator_config.yaml").read_text())
+    with pytest.raises(ValueError, match="differ"):
+        verify_source(tmp_path, config, MemoryMinIO(), "source/rees46/2019-10/test", tmp_path / "manifest.json")

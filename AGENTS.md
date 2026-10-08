@@ -2,6 +2,10 @@
 
 This file explains how to maintain the project's documentation and verified progress. Follow the root [INDEX.md](INDEX.md) reading order and use [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for the beginner-friendly, one-component-at-a-time learning process.
 
+## Code organization preference
+
+Prefer a small number of cohesive files. Extend the owning component, config, tests and component note before creating a parallel entrypoint or document. Split files only when an independent responsibility makes maintenance clearer; explain the reason first. Keep historical evidence unchanged.
+
 ## Documentation ownership
 
 - [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) is the agreed product/data design. Update it only when a design decision changes; do not use it to claim implementation or runtime success.

@@ -102,3 +102,10 @@ The agreed source split is `2019-Oct.csv` for historical batch/bootstrap over `[
 - Physical layout, retention/versioning of samples, features, labels and datasets; analytics/DWH mapping and DAG boundaries.
 
 These are target decisions, not runtime facts. Do not redesign or silently close an OPEN item while implementing another component.
+
+
+## Complete October Batch Generator direction — corrected 2026-10-08
+
+Batch Generator owns complete October ingestion and benchmark generation. Complete-source mode retains every source event, applies UTC OLD/NEW schema evolution, and adds configured 2% duplicate copies. It preserves natural skew, without synthetic user/price/time changes, sampling or replicas. Source CSV stays local with checksum; bounded multipart transport creates exactly two CSV objects plus manifest in a fresh MinIO prefix, with only small manifest/readback local.
+
+Injected copies must be handled before feature/label computation without losing valid source events; exact downstream identity/dedup policy remains OPEN. Full feature-source validity cannot be inferred from injection/readback alone. The earlier no-injection run was superseded and cleaned with retained evidence. Full corrected runtime and all scale/other pending rubric requirements remain unverified.

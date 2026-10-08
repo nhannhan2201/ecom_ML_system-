@@ -25,6 +25,8 @@ Read the [project documentation map](INDEX.md) in order. The central references 
 | `tests/` | Unit, property and structure tests |
 | `docs/` | Component explanations and new evidence after verification |
 
-[Batch Generator → MinIO small runtime](docs/batch_generator_minio.md) is verified (2026-10-06): healthy MinIO, three objects and CSV readback; ≥100 GB and downstream remain unverified. `compose.yaml` runs MinIO only. CLI loads the root `.env` without overriding existing environment variables.
+[Batch Generator → MinIO small runtime](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) is verified (2026-10-06): healthy MinIO, three objects and CSV readback; ≥100 GB and downstream remain unverified. `compose.yaml` runs MinIO only. CLI loads the root `.env` without overriding existing environment variables.
 
 `Makefile` and old pipeline jobs were removed. Run Batch Generator unit tests with `python -m pytest tests/test_batch_generator.py -q`; tests verify code-level properties only; they do not prove that external services or data pipelines completed successfully. The retained generator can write local or external state. Use the roadmap's scoped milestone and isolated destinations before running them. Do not commit automatically.
+
+[Full October Batch Generator evidence](docs/evidence/batch_generator_october.json): learner native readback PASS for 42,448,764 source + 848,975 injected copies, date-based schema evolution and bytes/hashes. Two CSVs in MinIO, only small local reports; natural duplicates/skew/≥100 GB and Spark remain unverified. [Current commands](docs/batch_generator.md).

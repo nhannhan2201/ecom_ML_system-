@@ -16,6 +16,10 @@ batch_generator:
   # - medium: ~5 GB benchmark dataset phục vụ integration & scale test
   # - full:   >=100GB benchmark dataset (streaming chunked, không giữ toàn bộ 100GB trong RAM)
   mode: "small"
+  # Complete October: no sampling/replicas; schema evolution and configured duplicates apply.
+  source:
+    prefix_root: "source/rees46/2019-10"
+    multipart_size_mb: 64  # RAM buffer per schema; final output remains exactly two CSV objects
   base_seed: 42
   modes_definition:
     small:
