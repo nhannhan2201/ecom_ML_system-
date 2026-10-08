@@ -55,9 +55,9 @@ Mỗi item cần link code/config, command/input/version/time, actual result, sc
 
 ## Current status
 
-- **Current stop (2026-10-08): Spark Raw → Bronze full readback PASS.** [Bronze evidence](docs/evidence/spark_raw_to_bronze_full.json). Earlier Batch Generator verification: 42,448,764 source + 848,975 injected copies = 43,297,739 output rows. Full remote hash/schema/date/count/scheduled-copy-pair checks PASS; automatic [evidence](docs/evidence/batch_generator_october.json). Learner-run Python 3.11.17, boto3 1.34.0. No local CSV output. Learning explanation and final diff review remain; no blanket component/rubric DONE.
+- **Current stop (2026-10-08): Spark Raw → Bronze Delta Schema Evolution smoke/full runtime READBACK_PASS.** [Full evidence](docs/evidence/spark_raw_to_bronze_evolution_full.json): 43,297,739 rows, Delta v0/13 → v1/14. [Smoke evidence](docs/evidence/spark_raw_to_bronze_evolution_smoke.json): 1,000 OLD + 1,000 NEW. Superseded single-write evidence/output cleaned by learner request; historical results retained below. Learner final explanation remains; no blanket component/rubric DONE.
 - **Kafka:** bounded replay/recovery/readback remains verified; unchanged, no rerun. [Evidence](docs/kafka_stream_replay.md).
-- **Next:** review/save Raw → Bronze work and confirm learner understanding; then propose Bronze → Silver separately. No automatic next-component implementation.
+- **Next:** learner explains CSV reader versus Delta evolution, expected-only union and two-commit recovery. Review documentation/cleanup; propose Bronze → Silver separately only when requested. No automatic next-component implementation.
 - **Remaining:** natural duplicate identity/count, statistical skew, ≥100 GB benchmark, downstream dedup/source preservation, complete lookback/horizon coverage, sample cadence and feature-store compatibility remain unverified/OPEN. Full October source selection is decided; it does not close these policies.
 
 ## Component learning log
@@ -240,6 +240,8 @@ Native rerun: `PYTHONDONTWRITEBYTECODE=1 /home/nhan/miniconda3/envs/ecom-rebuild
 
 ## Spark Raw → Bronze — full runtime PASS — 2026-10-08
 
+**Lịch sử single-write, không phải hướng dẫn chạy hiện tại.** Evidence JSON và output tương ứng đã được dọn theo yêu cầu sau evolution full PASS. Các lệnh, số liệu và đường dẫn dưới đây giữ nguyên để truy vết lịch sử.
+
 - **Purpose/flow:** verified October OLD9/NEW10 CSVs → explicit string schemas → OLD discount null + union/provenance → Bronze Delta → full readback. Keeps empty source fields as strings and all row multiplicities; no casts/dedup, Silver or feature/label processing.
 - **Files:** `src/spark/raw_to_bronze.py`, `config/spark_config.yaml`, `tests/test_raw_to_bronze.py`, package marker. Config supplies Delta/S3A dependencies; no manual export required. Destination bucket created only if confirmed missing; existing prefixes/evidence refused.
 - **Learner command:** below. Input is the exact two CSVs under `ecommerce-raw/source/rees46/2019-10/20261008-04`; output `s3a://ecommerce-lakehouse/bronze/raw_events/october-full-01`.
@@ -253,9 +255,9 @@ python -m src.spark.raw_to_bronze \
   --evidence-output docs/evidence/spark_raw_to_bronze_full.json
 ```
 
-- **Actual result:** [full evidence](docs/evidence/spark_raw_to_bronze_full.json), READBACK_PASS; OLD 20,851,661 + NEW 22,446,078 = **43,297,739**; Delta version 0. UTC 12:26:11.448307–12:43:51.548767, 1060.1005s including preflight/cache/write/exact readback, excluding final report publication/cleanup; not an optimization benchmark. Evidence equals local report and current code SHA-256. Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g, 64 shuffle partitions.
+- **Actual result:** `docs/evidence/spark_raw_to_bronze_full.json` (evidence single-write lịch sử; đã dọn theo yêu cầu), READBACK_PASS; OLD 20,851,661 + NEW 22,446,078 = **43,297,739**; Delta version 0. UTC 12:26:11.448307–12:43:51.548767, 1060.1005s including preflight/cache/write/exact readback, excluding final report publication/cleanup; not an optimization benchmark. Evidence equals local report and current code SHA-256. Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g, 64 shuffle partitions.
 - **Checks/meaning:** schema names/types/order, per-schema counts and producer manifest counts, bidirectional exceptAll values/multiplicities, OLD discount null, source metadata unchanged and Delta readback PASS. exceptAll requires shuffle to compare repeated rows across partitions; multiple stages do not mean Silver/Gold ran. It compares parsed/transformed input to Bronze, not an independent reconstruction or full rehash of original CSV. Delta nullability may widen.
-- **Earlier checks/history:** native fixture module 25 PASS in 40.54s; Ruff/CLI checks PASS. Smoke 02: 2,000 rows READBACK_PASS ([evidence](docs/evidence/spark_raw_to_bronze.json)). Smoke 01 failed before Spark on missing destination bucket; report retained. Final full-run cache-removal WARNs followed READBACK_PASS; no failed result recorded. No workload rerun for this documentation update.
+- **Earlier checks/history:** native fixture module 25 PASS in 40.54s; Ruff/CLI checks PASS. Smoke 02: 2,000 rows READBACK_PASS (`docs/evidence/spark_raw_to_bronze.json` (evidence single-write lịch sử; đã dọn theo yêu cầu)). Smoke 01 failed before Spark on missing destination bucket; report retained. Final full-run cache-removal WARNs followed READBACK_PASS; no failed result recorded. No workload rerun for this documentation update.
 - **Progress/limits:** Raw → Bronze implementation/runtime complete within this scope; learner final explanation/diff review remains. Silver identity/dedup, features/labels/completeness, Airflow/governance, optimization and ≥100 GB not completed by this run. Docs and relevant rubric rows updated; architecture unchanged. Existing source, raw objects, Kafka artifacts and evidence preserved; no commit.
 
 ## Spark Raw → Bronze — review hardening (tests/docs only) — 2026-10-08
@@ -267,3 +269,97 @@ python -m src.spark.raw_to_bronze \
 Final: `PYSPARK_PYTHON=/home/nhan/miniconda3/envs/ecom-rebuild/bin/python PYTHONDONTWRITEBYTECODE=1 /home/nhan/miniconda3/envs/ecom-rebuild/bin/python -m pytest tests/test_raw_to_bronze.py -q -ra -p no:cacheprovider` → **47 passed in 52.76s, no SKIP**. `python -m ruff check --no-cache tests/test_raw_to_bronze.py` PASS; 145 local/external Markdown link occurrences scanned, all local targets/anchors valid (external URLs not fetched). `git diff --check` PASS. Verified job/config and all tracked evidence byte-identical to HEAD. These are tests/docs checks, not a new MinIO run.
 
 Handoff: Raw → Bronze full runtime remains complete in its declared scope; review-hardening changes affect tests/docs only. Learner prefers concise, beginner-readable tests focused on data/rubric requirements; recorded in AGENTS.md for future slices. Next is a separately approved Bronze → Silver proposal, not implementation. Existing 47 cases are retained in this commit; no test-simplification or new runtime claim.
+
+## Spark Raw → Bronze — Delta Schema Evolution — 2026-10-08
+
+- **Purpose/input/output:** replace manual union-for-write with Delta-native additive schema evolution. Verified-source OLD9/NEW10 CSVs → metadata → isolated Delta table v0 (13 columns) / v1 (14). No business casts, dedup or change to CSV representation.
+- **Files/reasons:** owning job splits create/append and expected-only union, adds snapshot/history checks and failure stages; owning tests use tiny local CSV/Delta fixtures and conservative failure simulations. YAML/dependencies unchanged. Contract/source map/rubric/index distinguish new source from immutable historical full evidence.
+
+```mermaid
+flowchart LR
+    O["OLD9 + metadata"] --> V0["Delta v0: 13 columns"]
+    N["NEW10 + metadata"] --> A["append mergeSchema=true"]
+    V0 --> A --> V1["Delta v1: 14 columns"]
+    V1 --> C["schema/history/counts/exceptAll/source stability"] --> P["Publish new PASS evidence"]
+```
+
+The diagram describes current source; local fixture checks cannot establish MinIO runtime. `build_expected` is verification-only and does not feed either writer. Native CSV parsing and Delta table schema evolution are distinct responsibilities.
+
+- **Failure/debugging path:** inspect `artifacts/spark-raw-to-bronze/<run-id>/report.json`, `failed_after`, transaction outcomes and Delta history. OLD-only output can remain; append exception may follow a successful commit; no automatic retry/delete/overwrite. Hard interruption may leave the report stale. Fresh run-id required; consume only a published PASS version.
+- **Checks:** first sandbox attempt: 27 PASS / 22 setup ERROR in 4.97s because JVM local socket creation was forbidden. Authorized local run outside sandbox: 48 PASS / 1 FAIL in 60.20s; fixture assertion compared a Python local-time datetime to naive UTC. Fixed only the test to compare Spark epoch seconds against explicit UTC. Final checks recorded below.
+- **Learning/limits:** Delta adds the column during NEW commit and reads OLD discount as null; expected union only supplies the comparison oracle. Two commits do not provide batch atomicity, cache is not a source snapshot, metadata checks do not enforce object immutability. No MinIO/full run, no Silver, no commit/push, no blanket component DONE. Existing success evidence unchanged.
+
+Final local verification (Python 3.11.17, PySpark 3.5.0, Delta 3.0.0; local filesystem only):
+
+```bash
+PYSPARK_PYTHON=/home/nhan/miniconda3/envs/ecom-rebuild/bin/python PYTHONDONTWRITEBYTECODE=1 /home/nhan/miniconda3/envs/ecom-rebuild/bin/python -m pytest tests/test_raw_to_bronze.py -q -ra -p no:cacheprovider --tb=short
+python -m ruff check --no-cache src/spark/raw_to_bronze.py tests/test_raw_to_bronze.py
+git diff --check
+```
+
+Results: **50 passed in 72.44s, no SKIP**; Ruff PASS; diff whitespace PASS. Native test uses two identical OLD rows and one NEW row, verifies v0/13 and v1/14, exact WRITE history, OLD null/NEW discount, literal CSV values and UTC ingestion epoch, metadata, multiset equality and refusal to recreate an existing destination. Failure simulations cover OLD write, append before/after simulated commit and final verification; these verify job failure handling, not actual process-kill recovery. JVM tests required authorized execution outside the socket-restricted sandbox; cached JARs reused, no dependency installation. Config and tracked evidence remain unchanged. Local links checked separately; no MinIO smoke/full executed. Next: learner review/understanding, then separately authorized smoke using fresh destination/evidence.
+
+## Spark Raw → Bronze — Delta Schema Evolution smoke/full runtime PASS — 2026-10-08
+
+- **Mục đích:** chứng minh schema bảng Delta được mở rộng bởi NEW append `mergeSchema=true`, không phải frame union đã chuẩn hóa trước write.
+- **Input:** hai CSV OLD9/NEW10 trong `ecommerce-raw/source/rees46/2019-10/20261008-04`; manifest output_counts là 20,851,661 / 22,446,078. Không tạo/sửa Raw, không cast nghiệp vụ hoặc dedup.
+- **Files:** `src/spark/raw_to_bronze.py` (`read_csv`, `build_bronze`, `write_bronze`, `append_bronze`, `build_expected`, `verify_old`, `verify_bronze`, `verify_history`), YAML và owning tests. [Giải thích từng bước](docs/spark_raw_to_bronze.md).
+- **Lệnh learner thực sự chạy** (lịch sử; không chạy lại cùng run-id):
+
+```bash
+conda activate ecom-rebuild
+python -m src.spark.raw_to_bronze \
+  --config config/spark_config.yaml \
+  --mode smoke \
+  --limit-per-schema 1000 \
+  --run-id october-evolution-smoke-01 \
+  --evidence-output docs/evidence/spark_raw_to_bronze_evolution_smoke.json
+
+python -m src.spark.raw_to_bronze \
+  --config config/spark_config.yaml \
+  --mode full \
+  --run-id october-evolution-full-01 \
+  --evidence-output docs/evidence/spark_raw_to_bronze_evolution_full.json
+```
+
+| Run | Thời gian UTC trong evidence (2026-10-08) | Kết quả |
+| --- | --- | --- |
+| Smoke | 14:51:25.097167–14:52:21.295236; 56.1980s | READBACK_PASS; v0 OLD 1,000, v1 OLD/NEW 1,000/1,000 |
+| Full | 14:56:36.162803–15:23:20.016196; 1603.8534s | READBACK_PASS; v0 OLD 20,851,661, v1 OLD/NEW 20,851,661/22,446,078 |
+
+Full local time +07: 21:56:36–22:23:20. Timings include materialization, writes and exact readback, not final evidence publication/cleanup; no performance comparison claim. Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g; shuffle partitions smoke 2/full 64.
+
+- **Checks:** schema v0 13/v1 14, exact order/types, history `ErrorIfExists` → `Append`, both-direction `exceptAll`, OLD discount null, source binding/stability PASS. Full also matches manifest; smoke marks full_manifest_counts NOT_APPLICABLE correctly. NEW discount and all four metadata columns are covered by full-row comparison. Evidence equals local report; current source hash and source-evidence hash match both runs.
+- **Agent follow-up:** no Spark rerun. S3 API listing and four small remote `_delta_log` JSON reads verified schemas, modes and commit counts; full v0 adds 21 files / 20,851,661 rows, v1 adds 23 / 22,446,078; smoke adds one file / 1,000 rows per version. Counts from Delta statistics are cross-checks, not independent rereads of data files. Read-only local evidence consistency audit PASS.
+- **WARNs:** learner full log includes RowBasedKeyValueBatch spill warnings and one BlockManager removal warning after READBACK_PASS. The submitted log has no exception; evidence checks completed. No claim that WARNs are universally harmless or that this run is optimized.
+- **Học được/giới hạn:** CSV reader uses explicit string schemas; Delta evolves table metadata and exposes OLD discount as null. Expected union is never writer input. Two commits are not batch-atomic; commit uncertainty requires history inspection, no automatic retry. Raw metadata checks do not enforce immutability; no independent full hash/business identity audit, Silver or feature/label completeness.
+- **Docs updated:** README, contract, implementation map, relevant rubric rows and docs index now point to evolution evidence. Added one reusable component note for native concepts, code connections, debugging and evidence; architecture only had its evidence link repaired, no design decision changed. Historical progress is retained; no code change/test rerun or commit/push during this documentation task.
+
+### Cleanup single-write evidence — learner-authorized
+
+New full PASS was verified before retirement. Removed only the two historical JSON paths below; historical local artifacts/reports remain unchanged.
+
+- `docs/evidence/spark_raw_to_bronze.json` — SHA-256 before removal `940bc0a74c462b339371040912d6b5a0dec780ab41910b611f0b7f710a2592dc`.
+- `docs/evidence/spark_raw_to_bronze_full.json` — SHA-256 before removal `fd29358aa68c77054298b2e649874258b7cb9a5923bbdd661417ac31af0730bd`.
+
+### Cleanup Bronze cũ — readback PASS
+
+Learner explicitly authorized removing superseded evidence/data after the new smoke/full runs. Inspected current imports/config/tests/scripts/Compose and documentation references first; no active code consumer of either old table/evidence was found. No Makefile or active DAG exists in the inspected rebuild source. Updated active links to new evidence and rendered old historical links as literal retired paths; original commands/results remain historical.
+
+Exact temporary local inspection/cleanup commands (agent, not a pipeline run):
+
+```bash
+/home/nhan/miniconda3/envs/ecom-rebuild/bin/python /tmp/audit_bronze_cleanup.py inspect
+/home/nhan/miniconda3/envs/ecom-rebuild/bin/python /tmp/audit_bronze_cleanup.py delete-approved-old
+```
+
+The temporary script used `docker exec ecom_ml_system-minio-1` with the container's existing environment and `mc ls --recursive --json`, `mc cat` for four small commit logs, and `mc rm --recursive --force --json` against an explicit two-prefix allowlist. No .env/secret file or credential value was read into agent output. Container/environment discovery and S3 access required authorized Docker socket execution outside the sandbox; no container restart, volume deletion or Spark run.
+
+| Deleted prefix in `ecommerce-lakehouse` | Objects before | Listed object bytes before | Readback after |
+| --- | ---: | ---: | --- |
+| `bronze/raw_events/october-full-01/` | 45 | 1,567,179,555 | 0 current objects |
+| `bronze/raw_events/verification/october-bronze-smoke-02/` | 3 | 89,940 | 0 current objects |
+
+**Total removed: 48 objects / 1,567,269,495 listed object bytes.** This is object-size accounting, not a filesystem free-space measurement. Prefix slashes were retained to prevent matching neighboring run names. Before deletion the full/smoke evolution logs and local evidence were rechecked and all five inventories were required to match inspection. After deletion, Raw prefix (3 objects) and full/smoke evolution prefixes (46/4 objects) have identical key/size/ETag inventory hashes to before. No claim of a new full source SHA or Parquet scan. Local old artifacts/reports were retained; only the two retired docs/evidence JSONs were removed. Both new evidence JSONs and generator/Kafka evidence unchanged; no source/config/tests modified in this documentation/cleanup step, no commit/push.
+
+Documentation-only final checks: `git diff --check` PASS; all 139 local Markdown link targets/anchors in the nine updated notes validated. Both evolution evidence JSONs still equal local reports and current source hash; Batch Generator/Kafka evidence and Spark YAML byte-identical to HEAD. No unrelated tests rerun.

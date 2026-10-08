@@ -1,0 +1,394 @@
+{
+  "status": "READBACK_PASS",
+  "run_id": "october-evolution-full-01",
+  "input": {
+    "old": "s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_old.csv",
+    "new": "s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_new.csv",
+    "evidence": "docs/evidence/batch_generator_october.json"
+  },
+  "output": "s3a://ecommerce-lakehouse/bronze/raw_events/october-evolution-full-01",
+  "mode": "full",
+  "limit_per_schema": null,
+  "checks": {
+    "source_preflight": "PASS",
+    "selected_input_counts": "PASS",
+    "version_0_old_readback": "PASS",
+    "schema_names_types_order": "PASS",
+    "readback_counts_per_schema": {
+      "status": "PASS",
+      "input": {
+        "old": 20851661,
+        "new": 22446078
+      },
+      "output": {
+        "old": 20851661,
+        "new": 22446078
+      }
+    },
+    "full_manifest_counts": {
+      "status": "PASS",
+      "expected": {
+        "old": 20851661,
+        "new": 22446078
+      }
+    },
+    "values_and_multiplicities_bidirectional_exceptAll": "PASS",
+    "old_discount_null": "PASS",
+    "delta_history_versions_0_1": "PASS",
+    "source_metadata_unchanged": "PASS",
+    "delta_readback": "PASS"
+  },
+  "started_at": "2026-10-08T14:56:36.162803+00:00",
+  "limitations": [
+    "Full October Raw -> Bronze only; no Silver, natural duplicate or ML completeness claim.",
+    "No independent full input SHA audit or source business identity audit.",
+    "Single writer; input objects must remain unchanged; cache is not a snapshot.",
+    "CSV FAILFAST is not a complete structural audit.",
+    "Field nullability may widen during Delta persistence.",
+    "Two independent commits; OLD-only output can exist. Consume only a published PASS version.",
+    "A hard interruption can leave a stale report; inspect Delta history before recovery."
+  ],
+  "input_binding": {
+    "old": {
+      "bytes": 2802940819,
+      "etag": "\"422d82eeb915c2511d8e0b37c52084a5-42\"",
+      "modified": "2026-10-08T03:43:09+00:00"
+    },
+    "new": {
+      "bytes": 3076199711,
+      "etag": "\"78b7d172f111578c813a61e15a7cdfc2-46\"",
+      "modified": "2026-10-08T03:43:10+00:00"
+    }
+  },
+  "source_evidence_sha256": "c4add488c2922a0af00d71566903d1d3a56c3b5b276981ecb2817b45c90fa48b",
+  "spark_settings": {
+    "master": "local[2]",
+    "driver_memory": "2g",
+    "shuffle_partitions": 64,
+    "full_shuffle_partitions": 64,
+    "packages": [
+      "io.delta:delta-spark_2.12:3.0.0",
+      "org.apache.hadoop:hadoop-aws:3.3.4"
+    ]
+  },
+  "selected_input_counts": {
+    "old": 20851661,
+    "new": 22446078
+  },
+  "transactions": {
+    "old": "WRITE_RETURNED",
+    "new": "WRITE_RETURNED"
+  },
+  "snapshots": {
+    "0": {
+      "schema": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "event_time",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "event_type",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "product_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "category_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "category_code",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "brand",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "price",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "user_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "user_session",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_source_object",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_schema_version",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_run_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_ingested_at",
+            "type": "timestamp",
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "counts": {
+        "old": 20851661
+      },
+      "status": "READBACK_PASS"
+    },
+    "1": {
+      "schema": {
+        "type": "struct",
+        "fields": [
+          {
+            "name": "event_time",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "event_type",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "product_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "category_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "category_code",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "brand",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "price",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "user_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "user_session",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_source_object",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_schema_version",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_run_id",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "_ingested_at",
+            "type": "timestamp",
+            "nullable": true,
+            "metadata": {}
+          },
+          {
+            "name": "discount_percent",
+            "type": "string",
+            "nullable": true,
+            "metadata": {}
+          }
+        ]
+      },
+      "counts": {
+        "old": 20851661,
+        "new": 22446078
+      },
+      "status": "READBACK_PASS"
+    }
+  },
+  "delta_history": [
+    {
+      "version": 0,
+      "operation": "WRITE",
+      "mode": "ErrorIfExists"
+    },
+    {
+      "version": 1,
+      "operation": "WRITE",
+      "mode": "Append"
+    }
+  ],
+  "schema_evolution": {
+    "mechanism": "NEW append mergeSchema=true",
+    "versions": [
+      0,
+      1
+    ],
+    "column_counts": [
+      13,
+      14
+    ]
+  },
+  "counts": {
+    "old": 20851661,
+    "new": 22446078
+  },
+  "schema": {
+    "type": "struct",
+    "fields": [
+      {
+        "name": "event_time",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "event_type",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "product_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "category_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "category_code",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "brand",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "price",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "user_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "user_session",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_source_object",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_schema_version",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_run_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_ingested_at",
+        "type": "timestamp",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "discount_percent",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      }
+    ]
+  },
+  "delta_version": 1,
+  "versions": {
+    "pyspark": "3.5.0",
+    "delta-spark": "3.0.0",
+    "boto3": "1.34.0"
+  },
+  "code_sha256": "e96279cb8afd75f4514eae325af7056e0961cc38ccfd0ed818f935b038dd4dbf",
+  "finished_at": "2026-10-08T15:23:20.016196+00:00",
+  "elapsed_seconds": 1603.8533717499959
+}

@@ -7,7 +7,8 @@ from unittest.mock import Mock
 import pytest
 
 from src.spark.raw_to_bronze import (
-    COLUMNS, build_bronze, ensure_output_bucket, load_config, preflight, read_csv, s3_location,
+    COLUMNS, V0_COLUMNS, V1_COLUMNS, append_bronze, build_bronze, build_expected,
+    ensure_output_bucket, load_config, preflight, read_csv, s3_location, verify_history, verify_old,
     verify_bronze, write_bronze, write_json,
 )
 
@@ -78,13 +79,16 @@ def fixture_csv(path, version, rows):
     return str(path)
 
 
-def test_native_csv_union_delta_roundtrip(spark, tmp_path):
+def test_native_delta_schema_evolution_roundtrip(spark, tmp_path):
     row = ['2019-10-15 23:59:59 UTC', 'view', '000123', '900000000000000001',
            '', ' spaced, "brand" ', '01.20', '42', 'null']
     old = read_csv(spark, fixture_csv(tmp_path / 'old.csv', 'old', [row, row]), 'old', 1000)
     new = read_csv(spark, fixture_csv(tmp_path / 'new.csv', 'new',
                                      [['2019-10-16 00:00:00 UTC'] + row[1:] + ['4']]), 'new', 1000)
-    expected = build_bronze(old, new, 'fixture', '2026-10-08T00:00:00+00:00').cache()
+    assert 'discount_percent' not in old.columns
+    old = build_bronze(old, 'fixture', '2026-10-08T00:00:00+00:00')
+    new = build_bronze(new, 'fixture', '2026-10-08T00:00:00+00:00')
+    expected = build_expected(old, new).cache()
     assert expected.count() == 3
     original = expected.filter("_schema_version = 'old'").first()
     assert original.product_id == '000123'
@@ -94,8 +98,32 @@ def test_native_csv_union_delta_roundtrip(spark, tmp_path):
     assert original.user_session == 'null'
     assert original.discount_percent is None
     destination = str(tmp_path / 'bronze')
-    write_bronze(expected, destination)
-    actual = spark.read.format('delta').load(destination)
+    write_bronze(old, destination)
+    v0 = spark.read.format('delta').option('versionAsOf', 0).load(destination)
+    assert v0.columns == V0_COLUMNS
+    assert len(v0.columns) == 13
+    assert verify_old(old, v0) == {'old': 2}
+    append_bronze(new, destination)
+    actual = spark.read.format('delta').option('versionAsOf', 1).load(destination)
+    assert actual.columns == V1_COLUMNS
+    assert len(actual.columns) == 14
+    assert [r['version'] for r in verify_history(spark, destination)] == [0, 1]
+    records = actual.collect()
+    old_records = [r for r in records if r._schema_version == 'old']
+    assert len(old_records) == 2 and old_records[0] == old_records[1]
+    for record in old_records:
+        assert [record[c] for c in COLUMNS] == row
+        assert record.discount_percent is None
+        assert record._source_object == str(tmp_path / 'old.csv')
+    new_record = next(r for r in records if r._schema_version == 'new')
+    assert [new_record[c] for c in COLUMNS + ['discount_percent']] == [
+        '2019-10-16 00:00:00 UTC'] + row[1:] + ['4']
+    assert new_record._source_object == str(tmp_path / 'new.csv')
+    for record in records:
+        assert record._run_id == 'fixture'
+    assert [r[0] for r in actual.selectExpr('CAST(_ingested_at AS BIGINT)').distinct().collect()] == [
+        int(datetime(2026, 10, 8, tzinfo=timezone.utc).timestamp())]
+
     checks = {}
     assert verify_bronze(expected, actual, checks, {'old': 2, 'new': 1}) == {'old': 2, 'new': 1}
     assert checks['full_manifest_counts']['status'] == 'PASS'
@@ -107,7 +135,7 @@ def test_native_csv_union_delta_roundtrip(spark, tmp_path):
         verify_bronze(expected, actual.withColumn('price', F.lit('changed')))
     from pyspark.errors import AnalysisException
     with pytest.raises(AnalysisException, match='already exists|already existent|PATH.*EXISTS'):
-        write_bronze(expected, destination)
+        write_bronze(old, destination)
     with pytest.raises(ValueError, match='counts mismatch'):
         verify_bronze(expected, actual.dropDuplicates())
     expected.unpersist()
@@ -152,6 +180,9 @@ def test_failure_keeps_evidence_absent(tmp_path, monkeypatch):
     from src.spark import raw_to_bronze as job
     config = load_config('config/spark_config.yaml')
     monkeypatch.setattr(job, 'load_config', lambda _: config)
+    monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **k: None)
+    monkeypatch.setenv('MINIO_ACCESS_KEY', 'fixture')
+    monkeypatch.setenv('MINIO_SECRET_KEY', 'fixture')
     def fail(*args):
         raise ValueError('secret-example-must-not-appear')
     monkeypatch.setattr(job, 'preflight', fail)
@@ -322,7 +353,7 @@ def bronze_fixture(spark):
     return (base.withColumn('_source_object', F.lit('fixture'))
             .withColumn('_schema_version', F.lit('new'))
             .withColumn('_run_id', F.lit('fixture'))
-            .withColumn('_ingested_at', F.lit('2026-10-08T00:00:00Z').cast('timestamp')))
+            .withColumn('_ingested_at', F.lit('2026-10-08T00:00:00Z').cast('timestamp')).select(*V1_COLUMNS))
 
 
 @pytest.mark.parametrize('mutation', ['extra', 'missing', 'type', 'order'])
@@ -363,40 +394,67 @@ def test_native_old_discount_rule_is_checked_even_when_frames_match(bronze_fixtu
         verify_bronze(bad, bad)
 
 
-def test_readback_failure_after_write_never_exports_pass(tmp_path, monkeypatch):
+@pytest.mark.parametrize('failure', ['old-write', 'append-before-commit', 'append-after-commit', 'readback'])
+def test_write_failures_never_export_pass(tmp_path, monkeypatch, failure):
     import json
     import sys
     from src.spark import raw_to_bronze as job
     config = load_config('config/spark_config.yaml')
     monkeypatch.setattr(job, 'load_config', lambda _: config)
     monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **k: None)
+    monkeypatch.setenv('MINIO_ACCESS_KEY', 'fixture')
+    monkeypatch.setenv('MINIO_SECRET_KEY', 'fixture')
     monkeypatch.setattr('boto3.client', Mock())
     monkeypatch.setattr(job, 'preflight', lambda *a: {})
-    # main reads the evidence file after preflight; use a tiny local stand-in.
     evidence_input = tmp_path / 'source.json'
     evidence_input.write_text('{}')
     config['input']['evidence'] = str(evidence_input)
-    spark_mock, frame = Mock(), Mock()
-    frame.persist.return_value = frame
-    frame.groupBy.return_value.count.return_value.collect.return_value = [
-        {'_schema_version': 'old', 'count': 1}, {'_schema_version': 'new', 'count': 1}]
+    spark_mock, old, new = Mock(), Mock(), Mock()
+    for frame in (old, new):
+        frame.persist.return_value = frame
+        frame.count.return_value = 1
     monkeypatch.setattr(job, 'create_spark', lambda _: spark_mock)
-    monkeypatch.setattr(job, 'read_csv', Mock())
-    monkeypatch.setattr(job, 'build_bronze', lambda *a: frame)
-    writer = Mock()
+    monkeypatch.setattr(job, 'read_csv', Mock(side_effect=[old, new]))
+    monkeypatch.setattr(job, 'build_bronze', lambda frame, *a: frame)
+    monkeypatch.setattr(job, 'check_schema', lambda *a: None)
+    monkeypatch.setattr(job, 'build_expected', lambda *a: Mock())
+    monkeypatch.setattr(job, 'verify_old', lambda *a: {'old': 1})
+    spark_mock.read.format.return_value.option.return_value.load.return_value.schema.jsonValue.return_value = {}
+    writer = Mock(side_effect=RuntimeError('fixture-old-write-error') if failure == 'old-write' else None)
     monkeypatch.setattr(job, 'write_bronze', writer)
+    commits = [] if failure == 'old-write' else ['old']
+    def append(*a):
+        if failure != 'append-before-commit':
+            commits.append('new')
+        if failure.startswith('append'):
+            raise RuntimeError('fixture-write-error')
+    appender = Mock(side_effect=append)
+    monkeypatch.setattr(job, 'append_bronze', appender)
     def fail_readback(*a):
         raise ValueError('Readback values/multiplicities mismatch')
     monkeypatch.setattr(job, 'verify_bronze', fail_readback)
     monkeypatch.chdir(tmp_path)
     evidence = tmp_path / 'never-pass.json'
-    monkeypatch.setattr(sys, 'argv', ['job', '--run-id', 'readback-failure', '--evidence-output', str(evidence)])
+    monkeypatch.setattr(sys, 'argv', ['job', '--run-id', 'failure', '--evidence-output', str(evidence)])
     with pytest.raises(RuntimeError, match='Raw -> Bronze failed'):
         job.main()
-    writer.assert_called_once()
-    report = json.loads((tmp_path / 'artifacts/spark-raw-to-bronze/readback-failure/report.json').read_text())
+    writer.assert_called_once_with(old, config['output_root'] + '/failure')
+    if failure == 'old-write':
+        appender.assert_not_called()
+        assert commits == []
+    else:
+        appender.assert_called_once_with(new, config['output_root'] + '/failure')
+        assert commits == (['old'] if failure == 'append-before-commit' else ['old', 'new'])
+    report = json.loads((tmp_path / 'artifacts/spark-raw-to-bronze/failure/report.json').read_text())
     assert report['status'] == 'FAILED'
-    assert report['failed_after'] == 'WRITE_SUCCEEDED'
+    stages = {'old-write': 'OLD_WRITE_ATTEMPTED', 'readback': 'NEW_APPEND_SUCCEEDED'}
+    assert report['failed_after'] == stages.get(failure, 'NEW_APPEND_ATTEMPTED')
+    assert report['transactions']['old'] == ('COMMIT_UNKNOWN' if failure == 'old-write' else 'WRITE_RETURNED')
+    assert report['transactions']['new'] == (
+        'NOT_ATTEMPTED' if failure == 'old-write' else
+        'WRITE_RETURNED' if failure == 'readback' else 'COMMIT_UNKNOWN')
+    assert 'Inspect Delta history' in report['recovery']
     assert not evidence.exists()
-    frame.unpersist.assert_called_once()
+    old.unpersist.assert_called_once()
+    new.unpersist.assert_called_once()
     spark_mock.stop.assert_called_once()

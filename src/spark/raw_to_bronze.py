@@ -18,6 +18,9 @@ import yaml
 
 COLUMNS = ['event_time', 'event_type', 'product_id', 'category_id',
            'category_code', 'brand', 'price', 'user_id', 'user_session']
+METADATA_COLUMNS = ['_source_object', '_schema_version', '_run_id', '_ingested_at']
+V0_COLUMNS = COLUMNS + METADATA_COLUMNS
+V1_COLUMNS = V0_COLUMNS + ['discount_percent']
 
 
 def write_json(path, value):
@@ -99,27 +102,71 @@ def read_csv(spark, uri, version, limit):
         frame = frame.limit(limit)
     # CSV represents source fields as text; preserve empty field values as ''.
     frame = frame.select(*[F.coalesce(F.col(c), F.lit('')).alias(c) for c in columns])
-    if version == 'old':
-        frame = frame.withColumn('discount_percent', F.lit(None).cast('string'))
     return frame.withColumn('_source_object', F.lit(uri)).withColumn('_schema_version', F.lit(version))
 
 
-def build_bronze(old, new, run_id, timestamp):
+def build_bronze(frame, run_id, timestamp):
+    """Attach batch metadata to one source; never union frames for writing."""
     from pyspark.sql import functions as F
-    return (old.unionByName(new).withColumn('_run_id', F.lit(run_id))
+    return (frame.withColumn('_run_id', F.lit(run_id))
             .withColumn('_ingested_at', F.lit(timestamp).cast('timestamp')))
 
 
+def build_expected(old, new):
+    """Verification only: Delta, not this frame, evolves the persisted schema."""
+    from pyspark.sql import functions as F
+    return (old.withColumn('discount_percent', F.lit(None).cast('string'))
+            .unionByName(new).select(*V1_COLUMNS))
+
+
+def check_schema(frame, columns):
+    from pyspark.sql.types import StringType, TimestampType
+    expected = [(c, TimestampType() if c == '_ingested_at' else StringType()) for c in columns]
+    if [(f.name, f.dataType) for f in frame.schema] != expected:
+        raise ValueError('Readback schema mismatch')
+
+
 def write_bronze(frame, destination):
+    check_schema(frame, V0_COLUMNS)
     frame.write.format('delta').mode('errorifexists').save(destination)
+
+
+def append_bronze(frame, destination):
+    check_schema(frame, COLUMNS + ['discount_percent'] + METADATA_COLUMNS)
+    frame.write.format('delta').mode('append').option('mergeSchema', 'true').save(destination)
+
+
+def verify_old(old, actual):
+    check_schema(old, V0_COLUMNS)
+    check_schema(actual, V0_COLUMNS)
+    counts = {'old': old.count()}
+    if actual.count() != counts['old']:
+        raise ValueError('OLD readback counts mismatch')
+    if old.exceptAll(actual).limit(1).count() or actual.exceptAll(old).limit(1).count():
+        raise ValueError('OLD readback values/multiplicities mismatch')
+    return counts
+
+
+def verify_history(spark, destination):
+    from delta.tables import DeltaTable
+    rows = DeltaTable.forPath(spark, destination).history().select(
+        'version', 'operation', 'operationParameters').collect()
+    rows = sorted(rows, key=lambda r: r['version'])
+    if (len(rows) != 2 or [r['version'] for r in rows] != [0, 1]
+            or any(r['operation'] != 'WRITE' for r in rows)
+            or rows[0]['operationParameters'].get('mode', '').lower() != 'errorifexists'
+            or rows[1]['operationParameters'].get('mode', '').lower() != 'append'):
+        raise ValueError('Expected exactly OLD create v0 and NEW append v1')
+    return [dict(version=r['version'], operation=r['operation'],
+                 mode=r['operationParameters']['mode']) for r in rows]
 
 
 def verify_bronze(expected, actual, checks=None, expected_counts=None):
     checks = checks if checks is not None else {}
-    if expected.schema != actual.schema:
-        # Delta may widen field nullability; names/types/order must remain exact.
-        if [(f.name, f.dataType) for f in expected.schema] != [(f.name, f.dataType) for f in actual.schema]:
-            raise ValueError('Readback schema mismatch')
+    check_schema(expected, V1_COLUMNS)
+    check_schema(actual, V1_COLUMNS)
+    expected = expected.select(*V1_COLUMNS)
+    actual = actual.select(*V1_COLUMNS)
     checks['schema_names_types_order'] = 'PASS'
     before = {r['_schema_version']: r['count'] for r in expected.groupBy('_schema_version').count().collect()}
     after = {r['_schema_version']: r['count'] for r in actual.groupBy('_schema_version').count().collect()}
@@ -239,9 +286,11 @@ def main():
                               'No independent full input SHA audit or source business identity audit.',
                               'Single writer; input objects must remain unchanged; cache is not a snapshot.',
                               'CSV FAILFAST is not a complete structural audit.',
-                              'Field nullability may widen during Delta persistence.']}
+                              'Field nullability may widen during Delta persistence.',
+                              'Two independent commits; OLD-only output can exist. Consume only a published PASS version.',
+                              'A hard interruption can leave a stale report; inspect Delta history before recovery.']}
     started = time.monotonic()
-    spark = frame = None
+    spark = old = new = None
     try:
         import boto3
         from dotenv import load_dotenv
@@ -265,32 +314,58 @@ def main():
         print('PREFLIGHT_PASS', flush=True)
         write_json(directory / 'report.json', report)
         spark = create_spark(config)
-        old = read_csv(spark, config['input']['old'], 'old', limit)
-        new = read_csv(spark, config['input']['new'], 'new', limit)
         from pyspark import StorageLevel
-        frame = build_bronze(old, new, args.run_id, report['started_at']).persist(
-            StorageLevel.DISK_ONLY if args.mode == 'full' else StorageLevel.MEMORY_AND_DISK)
-        selected_counts = {r['_schema_version']: r['count'] for r in
-                           frame.groupBy('_schema_version').count().collect()}
+        storage = StorageLevel.DISK_ONLY if args.mode == 'full' else StorageLevel.MEMORY_AND_DISK
+        old = build_bronze(read_csv(spark, config['input']['old'], 'old', limit),
+                           args.run_id, report['started_at']).persist(storage)
+        new = build_bronze(read_csv(spark, config['input']['new'], 'new', limit),
+                           args.run_id, report['started_at']).persist(storage)
+        check_schema(old, V0_COLUMNS)
+        check_schema(new, COLUMNS + ['discount_percent'] + METADATA_COLUMNS)
+        selected_counts = {'old': old.count(), 'new': new.count()}
+        if not all(selected_counts.values()):
+            raise ValueError('Both OLD and NEW must contain selected rows')
         if expected_counts is not None and selected_counts != expected_counts:
             raise ValueError('Full input counts differ from manifest; refusing Bronze write')
         report['selected_input_counts'] = selected_counts
         report['checks']['selected_input_counts'] = 'PASS'
-        write_json(directory / 'report.json', report)
+        report['transactions'] = {'old': 'NOT_ATTEMPTED', 'new': 'NOT_ATTEMPTED'}
         print('INPUT_MATERIALIZED', selected_counts, flush=True)
-        write_bronze(frame, destination)
-        report['status'] = 'WRITE_SUCCEEDED'
-        print('WRITE_SUCCEEDED; starting exact readback (may require disk shuffle)', flush=True)
+        report['status'] = 'OLD_WRITE_ATTEMPTED'
+        report['transactions']['old'] = 'COMMIT_UNKNOWN'
         write_json(directory / 'report.json', report)
-        actual = spark.read.format('delta').load(destination)
-        counts = verify_bronze(frame, actual, report['checks'], expected_counts)
+        write_bronze(old, destination)
+        report['transactions']['old'] = 'WRITE_RETURNED'
+        report['status'] = 'OLD_WRITE_SUCCEEDED'
+        write_json(directory / 'report.json', report)
+        v0 = spark.read.format('delta').option('versionAsOf', 0).load(destination)
+        old_counts = verify_old(old, v0)
+        report['snapshots'] = {'0': {'schema': v0.schema.jsonValue(), 'counts': old_counts,
+                                     'status': 'READBACK_PASS'}}
+        report['checks']['version_0_old_readback'] = 'PASS'
+        print('OLD_V0_READBACK_PASS; starting NEW append', flush=True)
+        report['status'] = 'NEW_APPEND_ATTEMPTED'
+        report['transactions']['new'] = 'COMMIT_UNKNOWN'
+        write_json(directory / 'report.json', report)
+        append_bronze(new, destination)
+        report['transactions']['new'] = 'WRITE_RETURNED'
+        report['status'] = 'NEW_APPEND_SUCCEEDED'
+        print('NEW_APPEND_SUCCEEDED; starting exact v1 readback', flush=True)
+        write_json(directory / 'report.json', report)
+        actual = spark.read.format('delta').option('versionAsOf', 1).load(destination)
+        counts = verify_bronze(build_expected(old, new), actual, report['checks'], expected_counts)
+        report['delta_history'] = verify_history(spark, destination)
+        report['checks']['delta_history_versions_0_1'] = 'PASS'
+        report['snapshots']['1'] = {'schema': actual.schema.jsonValue(), 'counts': counts,
+                                    'status': 'READBACK_PASS'}
+        report['schema_evolution'] = {'mechanism': 'NEW append mergeSchema=true',
+                                      'versions': [0, 1], 'column_counts': [13, 14]}
         if before != object_binding(client, config['input']):
             raise ValueError('Input object metadata changed during runtime')
         report['checks']['source_metadata_unchanged'] = 'PASS'
         report['checks']['delta_readback'] = 'PASS'
-        from delta.tables import DeltaTable
         report.update(status='READBACK_PASS', counts=counts, schema=actual.schema.jsonValue(),
-                      delta_version=DeltaTable.forPath(spark, destination).history(1).select('version').first()[0],
+                      delta_version=1,
                       versions={n: version(n) for n in ('pyspark', 'delta-spark', 'boto3')},
                       code_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
                       finished_at=datetime.now(timezone.utc).isoformat(), elapsed_seconds=time.monotonic() - started)
@@ -316,13 +391,16 @@ def main():
             operation = error.operation_name
             if re.fullmatch(r'[A-Za-z0-9_.-]{1,80}', code) and re.fullmatch(r'[A-Za-z0-9]{1,80}', operation):
                 report['s3_error'] = {'code': code, 'operation': operation}
+        report['recovery'] = ('Do not retry writes or modify destination. Inspect Delta history/readback; '
+                              'an interrupted write may have committed. Use a fresh run-id for a new attempt.')
         report.update(status='FAILED', failed_after=report['status'], error_type=type(error).__name__,
                       elapsed_seconds=time.monotonic() - started)
         write_json(directory / 'report.json', report)
         raise RuntimeError(f'Raw -> Bronze failed; see {directory}/report.json (exception text suppressed)') from None
     finally:
-        if frame is not None:
-            frame.unpersist()
+        for frame in (old, new):
+            if frame is not None:
+                frame.unpersist()
         if spark is not None:
             spark.stop()
 

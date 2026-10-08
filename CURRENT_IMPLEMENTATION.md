@@ -2,7 +2,7 @@
 
 ## Purpose and confidence
 
-Bản đồ source/config cập nhật 2026-10-08 sau bounded Replay Producer runtime/readback và recovery verification; broker/API checks trước đó là learner terminal outputs; Batch Generator full October readback đã PASS ngày 2026-10-08 ([evidence](docs/evidence/batch_generator_october.json)). Full October Spark Raw → Bronze cũng đã có [runtime evidence](docs/evidence/spark_raw_to_bronze_full.json). Chỉ mô tả file đang tồn tại; source inspection và unit test không chứng minh pipeline runtime. Thiết kế ở [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); schema/ý nghĩa dữ liệu ở [DATA_CONTRACT.md](DATA_CONTRACT.md); tiến độ ở [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
+Bản đồ source/config cập nhật 2026-10-08 sau bounded Replay Producer runtime/readback và recovery verification; broker/API checks trước đó là learner terminal outputs; Batch Generator full October readback đã PASS ngày 2026-10-08 ([evidence](docs/evidence/batch_generator_october.json)). Full October Spark Raw → Bronze Delta Schema Evolution đã [runtime/readback PASS](docs/evidence/spark_raw_to_bronze_evolution_full.json), v0/13 → v1/14; [smoke](docs/evidence/spark_raw_to_bronze_evolution_smoke.json) cũng PASS. Evidence/output single-write cũ đã dọn theo yêu cầu; lịch sử nằm bên dưới. Chỉ mô tả file đang tồn tại; source inspection và unit test không chứng minh pipeline runtime. Thiết kế ở [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); schema/ý nghĩa dữ liệu ở [DATA_CONTRACT.md](DATA_CONTRACT.md); tiến độ ở [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 
 ## Source còn lại
 
@@ -10,8 +10,8 @@ Bản đồ source/config cập nhật 2026-10-08 sau bounded Replay Producer ru
 | --- | --- | --- |
 | `src/generator/batch_generator.py` | Batch Generator: benchmark sampling/replicas; source mode đọc toàn bộ October, phân OLD/NEW và tiêm duplicate | Unit + small và full October source readback PASS; benchmark medium/full ≥100 GB chưa kiểm chứng ([evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06)) |
 | `compose.yaml` | MinIO + Kafka 4.1.2 single-node KRaft; riêng named volumes và healthchecks | MinIO: small và full October source readback PASS theo evidence đã liên kết. Kafka: broker health/internal API và host metadata API đã có learner outputs; bounded CLI replay/resume/readback PASS; readback sau broker bật lại theo learner; full scale/recreate unverified |
-| `src/spark/raw_to_bronze.py`, `config/spark_config.yaml` | OLD/NEW string schemas → union/provenance → Delta → exact readback; smoke/full CLI | Full 43,297,739 rows READBACK_PASS; no Silver/dedup/Airflow claim |
-| `tests/test_raw_to_bronze.py` | Fixture/mock validation, local Delta roundtrip, full/smoke limits | 47 PASS on Python 3.11.17; native dependency failures are errors, not SKIP; runtime evidence separate |
+| `src/spark/raw_to_bronze.py`, `config/spark_config.yaml` | OLD13 create v0 → NEW14 append mergeSchema → v1 exact readback; smoke/full CLI | MinIO evolution smoke/full READBACK_PASS, 43,297,739 full rows; no Silver/dedup/Airflow claim |
+| `tests/test_raw_to_bronze.py` | Fixture/mock validation, local Delta roundtrip, full/smoke limits | 50 PASS on Python 3.11.17, including local Delta v0/v1 evolution; native dependency failures are errors, not SKIP; MinIO runtime separately verified by evolution smoke/full evidence |
 | `requirements.txt` | Khai báo python-dotenv 1.2.1 cho CLI | Fixture dotenv pass; upload logic không đổi |
 | `src/generator/replay_producer.py` | CLI/config, streaming CSV validation, JSON 10 fields và key user_id | Unit-tested + bounded native ACK/readback PASS ([evidence](docs/kafka_stream_replay.md)) |
 | `src/generator/replay_runtime.py` | Event-time-progress late, duplicate, rate, ACK/error, checkpoint/resume at-least-once | Bounded delivery và Ctrl+C/resume/readback PASS; exactly-once unverified |
@@ -31,8 +31,8 @@ flowchart LR
   CFG["generator_config.yaml"] --> CLASS
   CLASS -->|"source mode: full October readback PASS"| SOURCE["Preserve source rows + inject copies"]
   SOURCE --> FULL["MinIO full October: OLD9 / NEW10 + manifest"]
-  FULL -->|"full runtime/readback PASS"| SP["Spark: string schemas + union/provenance"]
-  SP -->|"43,297,739 rows; duplicates retained"| BR["MinIO Bronze Delta: october-full-01"]
+  FULL -->|"full runtime/readback PASS"| SP["Spark: OLD create v0 + NEW append mergeSchema"]
+  SP -->|"43,297,739 rows; duplicates retained"| BR["MinIO Bronze Delta: october-evolution-full-01, v1"]
   CLASS --> SAMPLE["small: OLD/NEW reservoirs"] --> TRANS["existing transformation"]
   TRANS --> LOCAL["local CSV + manifest"]
   TRANS --> RAW["MinIO raw batch — small readback PASS"]
@@ -104,12 +104,26 @@ Destination-bucket change: 20 pure/mock tests PASS in learner Python 3.11.17; 2 
 
 ## Historical Spark pre-full-run status — 2026-10-08
 
-Learner smoke 02 report: 1,000 OLD + 1,000 NEW, READBACK_PASS, Delta version 0, 52.8874 seconds; evidence at [Spark smoke](docs/evidence/spark_raw_to_bronze.json). This supersedes earlier native-MinIO-pending statements for the bounded scope only. Full October is not yet run. `--mode full` now reads without limit, checks per-schema manifest output counts before writing and in readback, uses disk-only cache and 64 shuffle partitions. Default `--mode smoke` remains bounded. Config provisions Delta/Hadoop AWS packages through SparkSession; manual PYSPARK_SUBMIT_ARGS is no longer required. Full output is `s3a://ecommerce-lakehouse/bronze/raw_events/<run-id>`; smoke stays isolated under verification. JSON checks now report schema, counts, multiplicities, OLD discount and source binding. Old evidence is unchanged and describes the earlier code hash.
+Learner smoke 02 report: 1,000 OLD + 1,000 NEW, READBACK_PASS, Delta version 0, 52.8874 seconds; evidence at `docs/evidence/spark_raw_to_bronze.json` (evidence single-write lịch sử; đã dọn theo yêu cầu). This supersedes earlier native-MinIO-pending statements for the bounded scope only. Full October is not yet run. `--mode full` now reads without limit, checks per-schema manifest output counts before writing and in readback, uses disk-only cache and 64 shuffle partitions. Default `--mode smoke` remains bounded. Config provisions Delta/Hadoop AWS packages through SparkSession; manual PYSPARK_SUBMIT_ARGS is no longer required. Full output is `s3a://ecommerce-lakehouse/bronze/raw_events/<run-id>`; smoke stays isolated under verification. JSON checks now report schema, counts, multiplicities, OLD discount and source binding. Old evidence is unchanged and describes the earlier code hash.
 
-## Spark Raw → Bronze — current full runtime result
+## Historical Spark Raw → Bronze — single-write full runtime result
 
-Learner run `october-full-01`, 2026-10-08 12:26:11–12:43:51 UTC: **READBACK_PASS**, OLD 20,851,661 / NEW 22,446,078 (43,297,739 total), Delta version 0; 1060.1005s including exact readback, not an optimization benchmark. [Full evidence](docs/evidence/spark_raw_to_bronze_full.json) matches local report and current code hash. Runtime versions: Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g, 64 shuffle partitions. Output `s3a://ecommerce-lakehouse/bronze/raw_events/october-full-01`. Schema/counts/multiplicities/OLD discount/source metadata checks PASS. Raw text representation rules remain as in contract; duplicates retained. Silver, Airflow, feature/label runtime and ≥100 GB remain outside verified scope. Smoke evidence unchanged.
+Learner run `october-full-01`, 2026-10-08 12:26:11–12:43:51 UTC: **READBACK_PASS**, OLD 20,851,661 / NEW 22,446,078 (43,297,739 total), Delta version 0; 1060.1005s including exact readback, not an optimization benchmark. `docs/evidence/spark_raw_to_bronze_full.json` (evidence single-write lịch sử; đã dọn theo yêu cầu) matched the local report and code hash at that historical run; it does not describe current source. Runtime versions: Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g, 64 shuffle partitions. Output `s3a://ecommerce-lakehouse/bronze/raw_events/october-full-01`. Schema/counts/multiplicities/OLD discount/source metadata checks PASS. Raw text representation rules remain as in contract; duplicates retained. Silver, Airflow, feature/label runtime and ≥100 GB remain outside verified scope. Smoke evidence unchanged.
 
 Review hardening: Spark job/config unchanged. Raw October physical paths corrected in DATA_CONTRACT; historical `batch/` is learner-deleted. Native fixture now fails on missing/wrong Spark dependencies instead of skipping. Added CSV width/header/empty/quote and readback schema/value/multiplicity/failure tests; these use local fixtures/mocks, not MinIO. Full runtime evidence remains the original e93196e result.
 
 Final review checks: 47 tests PASS in 52.76s in ecom-rebuild Python 3.11.17, no skips. Ruff and Markdown local links/anchors checks PASS. No new pipeline runtime result; full evidence and code hash remain e93196e.
+
+## Spark Raw → Bronze — Delta Schema Evolution (2026-10-08)
+
+Current source replaces union-for-write with two independent transactions: OLD create (`errorifexists`), then NEW append (`mergeSchema=true`). `build_bronze` attaches batch metadata to one source; `build_expected` alone pads OLD discount/union for verification. `verify_old`, `verify_bronze` and `verify_history` check snapshots v0/v1, exact declared schema/order, row multisets, provenance and the two WRITE modes. CSV reader options, preflight, source binding and full/smoke settings remain unchanged. Native local verification and exact commands are recorded in the [roadmap](IMPLEMENTATION_ROADMAP.md#spark-raw--bronze--delta-schema-evolution--2026-10-08).
+
+Reports save write-attempt stages before calls, conservatively mark commit outcome unknown until the call returns, and never retry writes. A hard kill can leave a stale report. Failure leaves data intact and no official PASS evidence; inspect Delta history before manual recovery and use a fresh run-id for another attempt. Implementation-stage statement only: no MinIO run was executed during that edit. Current smoke/full runtime status is recorded below; no Silver changes.
+
+## Spark Raw → Bronze — current Delta evolution runtime/readback PASS
+
+Learner-run smoke `october-evolution-smoke-01`: 1,000 OLD + 1,000 NEW, 56.1980 seconds. Learner-run full `october-evolution-full-01`: OLD 20,851,661 + NEW 22,446,078 = **43,297,739** rows, 1603.8534 seconds including exact readback (not a benchmark). Full local time: **2026-10-08 21:56:36–22:23:20 +07**, corresponding to evidence UTC 14:56:36–15:23:20.
+
+Both tables have v0/13 columns (OLD only, no discount) and v1/14 columns (NEW appended, discount string at the end). Counts, full manifest reconciliation, schema/order, bidirectional `exceptAll`, OLD discount null and source stability PASS. [Full evidence](docs/evidence/spark_raw_to_bronze_evolution_full.json), [smoke evidence](docs/evidence/spark_raw_to_bronze_evolution_smoke.json), [beginner explanation](docs/spark_raw_to_bronze.md). Both reports equal their evidence JSON and bind current source SHA-256 `e96279cb8afd75f4514eae325af7056e0961cc38ccfd0ed818f935b038dd4dbf` and source-evidence SHA-256.
+
+Agent follow-up read four small `_delta_log` commit JSONs through the local MinIO S3 API: metadata schemas and WRITE modes match evidence; `add.stats.numRecords` and commit `numOutputRows` match OLD/NEW counts (full 21/23 data files; smoke 1/1). This is transaction-log cross-checking, not an independent second full data readback. Superseded single-write JSON evidence and two exact Bronze prefixes were cleaned by explicit learner request after this verification; historical commands/results remain in the roadmap. Raw and current evolution outputs are retained. No Silver, Airflow, feature/label, natural-duplicate identity or ≥100 GB completion claim.
