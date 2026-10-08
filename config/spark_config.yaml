@@ -1,0 +1,17 @@
+# Smoke is default; full requires explicit --mode full. No credentials in YAML.
+input:
+  old: s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_old.csv
+  new: s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_new.csv
+  evidence: docs/evidence/batch_generator_october.json
+output_root: s3a://ecommerce-lakehouse/bronze/raw_events/verification
+full_output_root: s3a://ecommerce-lakehouse/bronze/raw_events
+endpoint: http://localhost:9000
+spark:
+  master: local[2]
+  driver_memory: 2g
+  shuffle_partitions: 2
+  full_shuffle_partitions: 64
+  packages:
+    - io.delta:delta-spark_2.12:3.0.0
+    - org.apache.hadoop:hadoop-aws:3.3.4
+limit_per_schema: 1000

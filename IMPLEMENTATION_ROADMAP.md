@@ -55,9 +55,9 @@ Mỗi item cần link code/config, command/input/version/time, actual result, sc
 
 ## Current status
 
-- **Current stop (2026-10-08): Batch Generator full October → MinIO verification PASS.** 42,448,764 source + 848,975 injected copies = 43,297,739 output rows. Full remote hash/schema/date/count/scheduled-copy-pair checks PASS; automatic [evidence](docs/evidence/batch_generator_october.json). Learner-run Python 3.11.17, boto3 1.34.0. No local CSV output. Learning explanation and final diff review remain; no blanket component/rubric DONE.
+- **Current stop (2026-10-08): Spark Raw → Bronze full readback PASS.** [Bronze evidence](docs/evidence/spark_raw_to_bronze_full.json). Earlier Batch Generator verification: 42,448,764 source + 848,975 injected copies = 43,297,739 output rows. Full remote hash/schema/date/count/scheduled-copy-pair checks PASS; automatic [evidence](docs/evidence/batch_generator_october.json). Learner-run Python 3.11.17, boto3 1.34.0. No local CSV output. Learning explanation and final diff review remain; no blanket component/rubric DONE.
 - **Kafka:** bounded replay/recovery/readback remains verified; unchanged, no rerun. [Evidence](docs/kafka_stream_replay.md).
-- **Next:** review/save this Batch Generator work before proposing Spark Raw → Bronze. No automatic next-component implementation.
+- **Next:** review/save Raw → Bronze work and confirm learner understanding; then propose Bronze → Silver separately. No automatic next-component implementation.
 - **Remaining:** natural duplicate identity/count, statistical skew, ≥100 GB benchmark, downstream dedup/source preservation, complete lookback/horizon coverage, sample cadence and feature-store compatibility remain unverified/OPEN. Full October source selection is decided; it does not close these policies.
 
 ## Component learning log
@@ -190,3 +190,70 @@ Verification: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_gener
 - Learner environment Python 3.11.17, boto3 1.34.0, botocore 1.34.162. Ingest 10:33:26–10:43:10 local (583.4097s); verify 10:43:28–10:50:00 local (391.7169s), 2026-10-08 Asia/Ho_Chi_Minh, per artifact clocks. Scopes exclude final report publication, not benchmark.
 - Checks: evidence manifest/readback equal actual local JSON; code/artifact SHA-256 match; count/quota/ratio/time assertions PASS, source file size matches (no fresh source hash scan); git diff --check and local file links PASS. 18 simulated-S3 tests previously PASS, distinct from learner actual runtime.
 - Docs: component/index, CURRENT_IMPLEMENTATION, DATA_CONTRACT status, README, rubric rows 6–8, this log updated. Design source direction unchanged in this handoff. Do not claim natural-duplicate/skew/scale/Spark verification. Stop before Spark; no commit by agent per AGENTS.md.
+
+## Batch Generator → Spark Raw → Bronze handoff review — 2026-10-08
+
+- **Purpose/baseline:** review learner-pushed `d890e26`; synchronize current status without rewriting historical results. No generator/config/Spark code changed, no cleanup, ingestion or Kafka runtime rerun; existing evidence untouched.
+- **Input/output:** verified prefix `ecommerce-raw/source/rees46/2019-10/20261008-04`; OLD 20,851,661 + NEW 22,446,078 output rows. These include 848,975 injected copies, which Bronze must retain. Exact URIs, schema and limits are in the [handoff contract](DATA_CONTRACT.md#spark-raw--bronze-handoff--current-input-proposed-consumer).
+- **Checks (default Python 3.13.12):** `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_batch_generator.py tests/test_replay_producer.py tests/test_replay_runtime.py -q -p no:cacheprovider` → **64 passed in 1.54s**. `python -m ruff check --no-cache src/generator scripts/verify_kafka_replay.py tests/test_batch_generator.py tests/test_replay_producer.py tests/test_replay_runtime.py` → **All checks passed**. `env MINIO_ACCESS_KEY=compose-validation-only MINIO_SECRET_KEY=compose-validation-only docker compose --env-file /dev/null config --quiet` → exit 0; dummy values, no service mutation.
+- **Read-only inspection:** learner Python 3.11.17, existing S3 client: ListObjectsV2 exact three keys, HeadObject CSV sizes, GetObject Range bytes=0-2047 for each header, complete small remote manifest SHA-256 → PASS. Local manifest/readback and generator code SHA-256 match tracked evidence. No repeated full CSV hash audit; no independent reconstruction of original source content. Inline inspection created no report file.
+- **Environment gap:** import availability check in `ecom-rebuild`: boto3 present; pytest/ruff/PySpark/Delta absent. Test results above are from default Python, not learner Python. No packages installed. Spark 3.5.0 / Delta 3.0.0 are requirements declarations, not a verified runtime; Java and matching Hadoop S3A dependencies still require inspection.
+- **Docs/reasons:** README, CURRENT_IMPLEMENTATION, DATA_CONTRACT and Batch Generator note now distinguish current full October PASS, historical small/cleanup stages, declared evidence limits and proposed Spark consumer. No rubric promotion or design decision. Full October does not establish feature/label completeness at month boundaries or natural duplicate identity.
+
+```mermaid
+flowchart LR
+  CSV["Original October CSV"] -->|"learner run + full remote readback PASS"| RAW["MinIO OLD9 / NEW10 + manifest"]
+  RAW -. "proposed: explicit CSV objects only" .-> SP["Spark: string schemas + union + provenance"]
+  SP -. "proposed: preserve duplicate multiplicities" .-> B["Fresh isolated Bronze Delta destination"]
+  B -. "proposed" .-> V["Independent Delta readback"]
+```
+
+**Smallest proposed next milestone, awaiting learner approval:** Spark Raw → Bronze correctness smoke test, not full October processing. Add one cohesive job `src/spark/raw_to_bronze.py` and one test module `tests/test_raw_to_bronze.py`; only add config/package support if genuinely needed. Inspect/install learner runtime dependencies first. Explain CSV schemas, DataFrame union, S3A versus boto3, and Delta transaction log before implementation. Read OLD/NEW separately with explicit string schemas and checked header/quoting/null policy; add missing OLD discount and source-object/schema metadata. No dedup, cast of raw values, aggregation or overwrite of existing destinations.
+
+**Verification proposal:** tiny fixtures cover OLD/NEW boundary, blank fields, escaped quotes, identical repeated rows and malformed input. Then native S3A reads from the exact two verified object URIs, bounded output (e.g. up to 1,000 rows per object; `limit` is not an I/O-byte guarantee), cache the selected input and write a fresh isolated MinIO Bronze Delta destination chosen before the run. Read Delta back in a separate read operation and compare schema, per-source counts, original-field values and row multiplicities (`exceptAll` both directions), OLD discount null and NEW discount preserved. Fixture explicitly proves repeated rows survive even if the bounded source selection contains no pair. Record versions, commands, input scope, output URI, Delta version, checks and timings only after actual success. Full 43,297,739-row reconciliation is a later approved run; bounded smoke test cannot claim it.
+
+**Rubric:** prepares Spark baseline/schema handling (DE rows 11/13) and DP1 ingest/validate (22/23), without claiming Airflow orchestration, optimization, governance, full-scale or complete rubric success. Common failures to debug in order: missing Java/JARs → S3A endpoint/auth/path-style → header/CSV semantics → Delta persistence/readback. Learner explanation and approval pending; do not code Spark yet.
+
+## Spark Raw → Bronze — initial code, native runtime pending — 2026-10-08
+
+Learner authorized code after reviewing the detailed proposal. Added one cohesive job, its config, package marker and test module; no common helper module, standalone verifier or new component report. Flow: explicit OLD/NEW CSV → string schema/empty fields → union/provenance → fresh MinIO Delta destination → independent readback. Input evidence is inherited, not replaced by a new full SHA audit. Cache is not an immutable snapshot; single-writer and unchanged input assumptions apply.
+
+Checks: `PYTHONDONTWRITEBYTECODE=1 python -m pytest tests/test_raw_to_bronze.py tests/test_batch_generator.py tests/test_replay_producer.py tests/test_replay_runtime.py -q -p no:cacheprovider` → **74 passed, 2 skipped in 1.96s** (Python 3.13.12). `python -m ruff check --no-cache src/spark tests/test_raw_to_bronze.py` → **All checks passed**. `python -B -m src.spark.raw_to_bronze --help` → exit 0. The two skipped cases require pinned Spark 3.5.0/Delta 3.0.0 and provisioned JARs; no native Spark or MinIO write was attempted. No dependencies installed. Existing generator and Kafka evidence unchanged; no commit.
+
+Job CLI requires run-id and a new evidence path; default limit 1,000 per source, maximum 1,000. Report states STARTED/PREFLIGHT_PASS/WRITE_SUCCEEDED/READBACK_PASS or FAILED with exception type only. A failed run leaves artifacts for debugging; evidence is published atomically without overwrite only after successful readback. Bucket must exist; do not run the runtime command before provisioning compatible Java/Delta/S3A dependencies. Common failures: missing JARs/versions, endpoint credentials, occupied prefix, CSV semantics or Delta readback differences.
+
+Next: explain each added file, prepare learner environment, run native local fixtures, then approved bounded MinIO runtime and evidence. Not DONE; no rubric runtime promotion. Raw source, generator config, existing MinIO objects and Kafka remain untouched.
+
+## Spark Raw → Bronze — automatic destination bucket — 2026-10-08
+
+Learner authorized destination provisioning after smoke run 01 failed before Spark startup; read-only checks found source HeadBucket PASS and destination HeadBucket 404. Added `ensure_output_bucket` in the existing job: HeadBucket → create only for missing-bucket code + HTTP 404 → HeadBucket confirmation. AccessDenied, server and connection errors propagate; create failure is not ignored. Raw input is never provisioned and populated output prefixes remain rejected. This supersedes the earlier bucket-must-exist restriction; no bucket was created by the agent.
+
+`PYTHONDONTWRITEBYTECODE=1 /home/nhan/miniconda3/envs/ecom-rebuild/bin/python -m pytest tests/test_raw_to_bronze.py -q -ra -k 'not native' -p no:cacheprovider` → **20 passed, 2 deselected in 0.47s**. Ruff scoped checks PASS; native local Delta tests were not repeated because CSV/Delta logic did not change (learner's prior result: 12 passed in 39.92s). No MinIO workload or Kafka run. Preserve failed report 01 and use a fresh run-id on retry; job may now create the configured destination bucket on that run. No commit or evidence overwrite.
+
+## Spark Raw → Bronze — explicit full mode and detailed evidence — 2026-10-08
+
+Learner authorized full-mode implementation, but will run the real workload themselves. Existing smoke 02 READBACK_PASS is preserved. Added `--mode smoke|full` (default smoke), full rejects --limit-per-schema, exact manifest output-count reconciliation before write and after readback, named check results in JSON, source-evidence SHA and sanitized S3 operation/code for failure reports. Full uses disk-only cache/64 shuffle partitions; two task slots remain. Full tables use configured short `bronze/raw_events/<run-id>` path; verification tables remain isolated. Dependencies now configured in existing YAML/job (Delta 3.0.0, hadoop-aws 3.3.4); no separate launcher or new code files. Full exact exceptAll is expensive and may spill to local disk; no runtime/scale benchmark or completion claim.
+
+Before learner full run, fixture checks cover unbounded reader beyond 1,000 rows, smoke bound, full count mismatch, changed values, evidence refusal and contradictory CLI flags. Pure/mock tests: 22 PASS, 3 native deselected in 0.31s on ecom-rebuild Python 3.11.17. Ruff PASS. Native fixture rerun result recorded after completion below. Full workload not launched by agent; CSV/MinIO raw/Kafka and prior JSON unchanged.
+
+Native rerun: `PYTHONDONTWRITEBYTECODE=1 /home/nhan/miniconda3/envs/ecom-rebuild/bin/python -m pytest tests/test_raw_to_bronze.py -q -ra -p no:cacheprovider` → **25 passed in 40.54s**, no skipped cases, no manual PYSPARK_SUBMIT_ARGS. Spark fixture uses configured Delta coordinate; no S3A full run. `python -m ruff check --no-cache src/spark tests/test_raw_to_bronze.py`, CLI help and `git diff --check` PASS.
+
+## Spark Raw → Bronze — full runtime PASS — 2026-10-08
+
+- **Purpose/flow:** verified October OLD9/NEW10 CSVs → explicit string schemas → OLD discount null + union/provenance → Bronze Delta → full readback. Keeps empty source fields as strings and all row multiplicities; no casts/dedup, Silver or feature/label processing.
+- **Files:** `src/spark/raw_to_bronze.py`, `config/spark_config.yaml`, `tests/test_raw_to_bronze.py`, package marker. Config supplies Delta/S3A dependencies; no manual export required. Destination bucket created only if confirmed missing; existing prefixes/evidence refused.
+- **Learner command:** below. Input is the exact two CSVs under `ecommerce-raw/source/rees46/2019-10/20261008-04`; output `s3a://ecommerce-lakehouse/bronze/raw_events/october-full-01`.
+
+```bash
+conda activate ecom-rebuild
+python -m src.spark.raw_to_bronze \
+  --config config/spark_config.yaml \
+  --mode full \
+  --run-id october-full-01 \
+  --evidence-output docs/evidence/spark_raw_to_bronze_full.json
+```
+
+- **Actual result:** [full evidence](docs/evidence/spark_raw_to_bronze_full.json), READBACK_PASS; OLD 20,851,661 + NEW 22,446,078 = **43,297,739**; Delta version 0. UTC 12:26:11.448307–12:43:51.548767, 1060.1005s including preflight/cache/write/exact readback, excluding final report publication/cleanup; not an optimization benchmark. Evidence equals local report and current code SHA-256. Spark 3.5.0, Delta 3.0.0, boto3 1.34.0; local[2], driver 2g, 64 shuffle partitions.
+- **Checks/meaning:** schema names/types/order, per-schema counts and producer manifest counts, bidirectional exceptAll values/multiplicities, OLD discount null, source metadata unchanged and Delta readback PASS. exceptAll requires shuffle to compare repeated rows across partitions; multiple stages do not mean Silver/Gold ran. It compares parsed/transformed input to Bronze, not an independent reconstruction or full rehash of original CSV. Delta nullability may widen.
+- **Earlier checks/history:** native fixture module 25 PASS in 40.54s; Ruff/CLI checks PASS. Smoke 02: 2,000 rows READBACK_PASS ([evidence](docs/evidence/spark_raw_to_bronze.json)). Smoke 01 failed before Spark on missing destination bucket; report retained. Final full-run cache-removal WARNs followed READBACK_PASS; no failed result recorded. No workload rerun for this documentation update.
+- **Progress/limits:** Raw → Bronze implementation/runtime complete within this scope; learner final explanation/diff review remains. Silver identity/dedup, features/labels/completeness, Airflow/governance, optimization and ≥100 GB not completed by this run. Docs and relevant rubric rows updated; architecture unchanged. Existing source, raw objects, Kafka artifacts and evidence preserved; no commit.

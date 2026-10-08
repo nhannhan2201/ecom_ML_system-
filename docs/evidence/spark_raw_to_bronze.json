@@ -1,0 +1,133 @@
+{
+  "status": "READBACK_PASS",
+  "run_id": "october-bronze-smoke-02",
+  "input": {
+    "old": "s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_old.csv",
+    "new": "s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_new.csv",
+    "evidence": "docs/evidence/batch_generator_october.json"
+  },
+  "output": "s3a://ecommerce-lakehouse/bronze/raw_events/verification/october-bronze-smoke-02",
+  "limit_per_schema": 1000,
+  "started_at": "2026-10-08T12:09:05.813794+00:00",
+  "limitations": [
+    "Bounded run; not full October reconciliation.",
+    "No independent full input SHA audit or source business identity audit.",
+    "Single writer; input objects must remain unchanged; cache is not a snapshot.",
+    "CSV FAILFAST is not a complete structural audit.",
+    "Field nullability may widen during Delta persistence."
+  ],
+  "input_binding": {
+    "old": {
+      "bytes": 2802940819,
+      "etag": "\"422d82eeb915c2511d8e0b37c52084a5-42\"",
+      "modified": "2026-10-08T03:43:09+00:00"
+    },
+    "new": {
+      "bytes": 3076199711,
+      "etag": "\"78b7d172f111578c813a61e15a7cdfc2-46\"",
+      "modified": "2026-10-08T03:43:10+00:00"
+    }
+  },
+  "counts": {
+    "old": 1000,
+    "new": 1000
+  },
+  "schema": {
+    "type": "struct",
+    "fields": [
+      {
+        "name": "event_time",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "event_type",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "product_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "category_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "category_code",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "brand",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "price",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "user_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "user_session",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "discount_percent",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_source_object",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_schema_version",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_run_id",
+        "type": "string",
+        "nullable": true,
+        "metadata": {}
+      },
+      {
+        "name": "_ingested_at",
+        "type": "timestamp",
+        "nullable": true,
+        "metadata": {}
+      }
+    ]
+  },
+  "delta_version": 0,
+  "versions": {
+    "pyspark": "3.5.0",
+    "delta-spark": "3.0.0",
+    "boto3": "1.34.0"
+  },
+  "code_sha256": "6ffdfb07fd16afd36562f39bd8d08393e32e57b660458aa25ab92e13ac91365d",
+  "finished_at": "2026-10-08T12:09:58.701213+00:00",
+  "elapsed_seconds": 52.8874377630018
+}

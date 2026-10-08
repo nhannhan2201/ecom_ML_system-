@@ -2,13 +2,13 @@
 
 ## Purpose and status
 
-This file is the source of truth for dataset meaning, grain, keys, timestamps, and intended ownership. It separates **CURRENT rebuild-clean** (source/config present on this branch), **LEGACY old-vibe-backup** (historical source declarations, not current implementation), and **TARGET** (the agreed 15-minute purchase-propensity design). A source declaration proves only that code/config exists. Runtime claims require named readback evidence. Batch Generator now has [small MinIO readback evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) for 1,020,000 output rows; delivery guarantees, downstream pipelines and full-scale output remain **unverified**.
+This file is the source of truth for dataset meaning, grain, keys, timestamps, and intended ownership. It separates **CURRENT rebuild-clean** (source/config present on this branch), **LEGACY old-vibe-backup** (historical source declarations, not current implementation), and **TARGET** (the agreed 15-minute purchase-propensity design). A source declaration proves only that code/config exists. Runtime claims require named readback evidence. Batch Generator now has [small MinIO readback evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) for 1,020,000 output rows; Full October source readback also PASS ([evidence](docs/evidence/batch_generator_october.json)); delivery guarantees, downstream pipelines and ≥100 GB benchmark remain **unverified**.
 
 Related documents: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) describes the intended system; [CURRENT_IMPLEMENTATION.md](CURRENT_IMPLEMENTATION.md) maps source connections; [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) tracks work; [RUBRIC.md](RUBRIC.md) tracks workbook criteria.
 
 ## Branch scope
 
-- **CURRENT rebuild-clean:** Batch Generator, its YAML/config/tests and Compose declarations for MinIO plus Kafka. Small Batch Generator → MinIO runtime readback PASS; Replay Producer/readback source và unit tests đã có; bounded November replay/resume/readback verified ([evidence](docs/kafka_stream_replay.md)); full scale/recreate unverified; no downstream implementation. Broker/API learner outputs được phân loại riêng trong CURRENT_IMPLEMENTATION.md. Retained dependency/config declarations do not prove a service or consumer exists.
+- **CURRENT rebuild-clean:** Batch Generator, its YAML/config/tests and Compose declarations for MinIO plus Kafka. Small and full October source Batch Generator → MinIO declared-checks readback PASS; Replay Producer/readback source và unit tests đã có; bounded November replay/resume/readback verified ([evidence](docs/kafka_stream_replay.md)); full scale/recreate unverified; Spark Raw → Bronze full readback PASS, later downstream not implemented. Broker/API learner outputs được phân loại riêng trong CURRENT_IMPLEMENTATION.md. Retained dependency/config declarations do not prove a service or consumer exists.
 - **LEGACY old-vibe-backup:** historical Spark/Flink/Feast/Airflow/DWH/governance/stream source, recorded at snapshot `2cf00cf`. Paths, schemas and mismatches marked LEGACY below are reference only; reuse requires validation against TARGET.
 - **TARGET:** learner-approved DE flow ends at a Feature–Label Dataset; implementation gaps remain. See [target flow and OPEN decisions](TARGET_ARCHITECTURE.md).
 
@@ -64,28 +64,28 @@ CURRENT sections describe retained source and link named runtime evidence. LEGAC
 - **Producer:** external dataset; CURRENT readers are `src/generator/batch_generator.py` and `src/generator/replay_producer.py`. LEGACY reader `src/generator/stream_generator.py` is absent from rebuild-clean.
 - **Consumers:** CURRENT Batch Generator → MinIO raw CSV. CURRENT November Replay Producer → Kafka has bounded runtime/readback evidence; historical stream behavior is LEGACY below.
 - **Physical location:** batch input `2019-Oct.csv`; streaming config declares `2019-Nov.csv`, UTC interval `[2019-11-01,2019-12-01)`. Replay Producer và Compose Kafka đã có source; bounded CLI November → Kafka đã có [readback evidence](docs/kafka_stream_replay.md); full replay chưa verify.
-- **Schema:** source header columns are split as CSV text. Batch Generator uses pandas CSV parsing/type inference and UTC event_time classification; Replay Producer validation/null rules được ghi trong CURRENT stream contract bên dưới; removed parser rules vẫn là LEGACY. The source files were not rewritten/read through a data audit in this documentation task.
+- **Schema:** source header columns are split as CSV text. Batch Generator benchmark modes use pandas CSV parsing/type inference; source mode uses csv.reader, preserves the nine field strings and validates UTC event_time membership; Replay Producer validation/null rules được ghi trong CURRENT stream contract bên dưới; removed parser rules vẫn là LEGACY. The source files were not rewritten/read through a data audit in this documentation task.
 
 | Column | Logical type | CURRENT behavior / LEGACY parser behavior |
 | --- | --- | --- |
 | `event_time` | UTC timestamp text | Source string; parser preserves text. |
 | `event_type` | string | Source value. |
-| `product_id` | int64 | CURRENT batch: pandas inference; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
-| `category_id` | int64 | CURRENT batch: pandas inference; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
-| `category_code` | string | CURRENT batch: pandas inference; replay: empty → JSON null. LEGACY: null if empty. |
-| `brand` | string | CURRENT batch: pandas inference; replay: empty → JSON null. LEGACY: null if empty. |
-| `price` | float64 | CURRENT batch: pandas inference; replay: finite float bắt buộc, empty/NaN/Infinity gây lỗi. LEGACY: 0.0 if empty; invalid number row skipped. |
-| `user_id` | int64 | CURRENT batch: pandas inference; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
-| `user_session` | string | CURRENT batch: pandas inference; replay: empty → JSON null. LEGACY: null if empty. |
-| `discount_percent` | int32 | Added by generator for post-evolution data; random configured value, not present in original source schema. |
+| `product_id` | int64 | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
+| `category_id` | int64 | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
+| `category_code` | string | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: empty → JSON null. LEGACY: null if empty. |
+| `brand` | string | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: empty → JSON null. LEGACY: null if empty. |
+| `price` | float64 | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: finite float bắt buộc, empty/NaN/Infinity gây lỗi. LEGACY: 0.0 if empty; invalid number row skipped. |
+| `user_id` | int64 | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: bắt buộc int64, empty/invalid gây lỗi. LEGACY: null if empty; invalid integer row skipped. |
+| `user_session` | string | CURRENT batch benchmark: pandas inference; source mode: unchanged CSV text; replay: empty → JSON null. LEGACY: null if empty. |
+| `discount_percent` | int32 | Added by generator for post-evolution data; configured synthetic value, not present in original source schema; source mode selects deterministically from seed/source-record SHA-256, then copies the adapted row for injected duplicates. |
 
 ### Raw batch CSV objects — CURRENT rebuild-clean
 
 - **Purpose / grain:** generated copy of source events, split by configured schema-evolution date; offline ingestion input.
 - **Producer:** batch generator (`src/generator/batch_generator.py`), config `config/generator_config.yaml`.
-- **Consumers:** no downstream consumer implemented on rebuild-clean. TARGET Spark raw → Bronze; LEGACY Spark DP1/Airflow paths are described below.
+- **Consumers:** CURRENT Spark raw → Bronze full runtime/readback PASS; LEGACY Spark DP1/Airflow paths are described below.
 - **Physical location:** `s3://ecommerce-raw/batch/raw_events_old.csv` and `s3://ecommerce-raw/batch/raw_events_new.csv`; large mode may emit part files. Small mode also writes local output as defined by the generator.
-- **Schema:** old part contains the nine source columns through `user_session`; new part adds `discount_percent`. CSV columns are textual on disk; LEGACY Spark casts IDs to BIGINT and price to DOUBLE, but no Spark implementation exists on rebuild-clean. Config defines UTC BATCH `[2019-10-01,2019-11-01)`, OLD `[2019-10-01,2019-10-16)` and NEW `[2019-10-16,2019-11-01)`. The shared classifier parses event_time before sampling; row position never determines schema membership. Small mode uses independently seeded random-priority reservoirs, quotas floor(N/2) OLD and remainder NEW. A short population is returned without duplication or quota transfer. INVALID and EXCLUDED counts are logged and persisted in the small manifest. [Batch Generator evidence](docs/batch_generator.md) verifies fixture boundaries and local 1,000-source-row sample readback (510 output rows per group after existing transformation); [Small MinIO readback](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) verifies 510,000 rows per schema, exact headers/field counts, total bytes and CSV equality to local. Full October output and ≥100 GB remain NOT YET VERIFIED.
+- **Schema:** old part contains the nine source columns through `user_session`; new part adds `discount_percent`. CSV columns are textual on disk; LEGACY Spark casts IDs to BIGINT and price to DOUBLE, while CURRENT Bronze retains strings (no Silver casts). Config defines UTC BATCH `[2019-10-01,2019-11-01)`, OLD `[2019-10-01,2019-10-16)` and NEW `[2019-10-16,2019-11-01)`. The shared classifier parses event_time before sampling; row position never determines schema membership. Small mode uses independently seeded random-priority reservoirs, quotas floor(N/2) OLD and remainder NEW. A short population is returned without duplication or quota transfer. INVALID and EXCLUDED counts are logged and persisted in the small manifest. [Batch Generator evidence](docs/batch_generator.md) verifies fixture boundaries and local 1,000-source-row sample readback (510 output rows per group after existing transformation); [Small MinIO readback](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) verifies 510,000 rows per schema, exact headers/field counts, total bytes and CSV equality to local. Full October source-mode output has declared-checks readback PASS; ≥100 GB benchmark remains NOT YET VERIFIED.
 - **Key/timestamps:** no enforced key; no separate ingestion timestamp in CSV. Event timestamp is source `event_time`.
 
 ### Stream event record and Kafka topic — CURRENT rebuild-clean
@@ -178,7 +178,7 @@ Sections explicitly marked LEGACY describe producer/consumer implementation file
 - **Consumers:** Feast offline retrieval/training joins; Feast online retrieval for inference; Airflow incremental materialization moves eligible offline history to online. Realtime writes must support offline and online stores as required by rubric; exact deployable job mapping is OPEN.
 - **Physical location:** offline `feat_user_15m` history on MinIO; Delta/Parquet access mapping and Feast compatibility remain OPEN; online latest state via Feast-managed Redis. Exact online key encoding belongs to Feast and is not a project contract.
 - **Canonical schema/grain:** `user_id INT64 NOT NULL`, `views_15m INT64 NOT NULL`, `carts_15m INT64 NOT NULL`, `purchases_15m INT64 NOT NULL`, `total_spend_15m FLOAT64 NOT NULL`, `feature_timestamp TIMESTAMP_UTC NOT NULL`; logical key `(user_id, feature_timestamp)`; `created_timestamp TIMESTAMP_UTC` records creation time, not guaranteed online availability. Revision/correction policy remains OPEN; logical grain does not settle revision storage.
-- **Status:** target contract only; no Spark/Flink/Feast implementation on rebuild-clean. LEGACY Feast stream view uses 15m names but maps timestamps as `event_timestamp`/`created`; batch view remains 30d. LEGACY FeatureService includes both views. No online/offline readback confirms parity or freshness.
+- **Status:** target contract only; no feature-producing Spark/Flink/Feast implementation on rebuild-clean. LEGACY Feast stream view uses 15m names but maps timestamps as `event_timestamp`/`created`; batch view remains 30d. LEGACY FeatureService includes both views. No online/offline readback confirms parity or freshness.
 
 ### Historical label history and Feature–Label Dataset — TARGET, not implemented
 
@@ -222,10 +222,10 @@ Future production examples link by `prediction_id` and retain exact logged featu
 
 | Concern | CURRENT rebuild-clean | TARGET contract | Status / LEGACY comparison |
 | --- | --- | --- | --- |
-| Batch source | October CSV; parsed UTC classification then deterministic per-schema sampling; shared classifier in benchmark | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([Batch Generator](docs/batch_generator.md)); [small MinIO readback PASS](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06); full output/≥100 GB/November stream NOT YET VERIFIED |
+| Batch source | October CSV; complete-source mode preserves records + injects copies; benchmark modes sample/replicate | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([Batch Generator](docs/batch_generator.md)); [small MinIO readback PASS](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06); full October source declared checks PASS; ≥100 GB/full November stream NOT YET VERIFIED |
 | Kafka Stream Replay | Kafka 4.1.2 Compose, November Replay Producer and bounded verifier | Bounded replay with actual ack and consumer readback | BOUNDED ACK/READBACK + PRODUCER RESUME VERIFIED; full scale/recreate/exactly-once unverified |
 | Event identity/dedup | Raw batch has no stable event_id; no downstream dedup implementation | Explicit source/event identity or documented conservative dedup rule | NOT IMPLEMENTED; LEGACY composite dedup is reference only |
-| Durable event history | Raw CSV objects in MinIO; no Bronze/Silver or stream archive implementation | Preserve accepted source events independently of lossy features | SMALL RAW READBACK PASS; downstream NOT IMPLEMENTED |
+| Durable event history | Full October Raw CSV + Bronze Delta; no Silver or stream archive implementation | Preserve accepted source events independently of lossy features | FULL BRONZE READBACK PASS; [evidence](docs/evidence/spark_raw_to_bronze_full.json); Silver/stream archive NOT IMPLEMENTED |
 | 15m feature semantics | No Spark/Flink feature implementation | Four identical per-user windows with same event-time, boundary and late availability semantics | NOT IMPLEMENTED; LEGACY 30d/hopping-window mismatch |
 | Feature keys/timestamps | No feature producer; raw event_time retained | `(user_id,feature_timestamp)` plus separate creation/availability time | NOT IMPLEMENTED; LEGACY event_timestamp/created mappings only |
 | Offline and online stream writes | No Kafka/Feast stream pusher | Demonstrate offline and online paths with readback | NOT IMPLEMENTED; LEGACY pusher only |
@@ -233,19 +233,19 @@ Future production examples link by `prediction_id` and retain exact logged featu
 | Prediction log | No prediction service/log implementation | Future production only; outside current DE flow | NOT IMPLEMENTED |
 | Labels / dataset | No label job/table or Dataset Builder implementation | Both lanes: `(user_id,feature_timestamp)`, `[t,t+1h)`, finalized labels joined to matching feature snapshots | NOT IMPLEMENTED; see TARGET contracts above |
 | PostgreSQL mirror | No DDL/copy implementation or PostgreSQL service | Explicit documented mapping and reconciled readback | NOT IMPLEMENTED; LEGACY mappings only |
-| Rubric result | Batch Generator/MinIO evidence and workbook mapping; downstream absent | Evidence-backed criterion status | SMALL INTEGRATION PASS; see RUBRIC; ≥100 GB NOT VERIFIED |
+| Rubric result | Batch Generator, Kafka and Spark Bronze evidence; later downstream absent | Evidence-backed criterion status | SMALL + FULL OCTOBER DECLARED-CHECKS PASS; see RUBRIC; ≥100 GB NOT VERIFIED |
 
 ## Lineage overview — CURRENT rebuild-clean
 
-Solid links describe retained source connections; CSV → raw/local and MinIO readback are verified for the named small run. Dashed links are TARGET requirements with no implementation on this branch.
+Solid links describe retained source connections; full October Raw → Bronze and bounded Kafka links have named runtime evidence. Local CSV output is the historical small-mode branch, not full-source output.
 
 ```mermaid
 flowchart LR
   CSV["October CSV"] --> BG["Batch Generator"]
   CFG["generator_config.yaml"] --> BG
-  BG --> RAW["MinIO raw batch — small readback PASS"]
+  BG --> RAW["MinIO Raw — full October readback PASS"]
   BG --> LOCAL["Local CSV + manifest"]
-  RAW -. "TARGET; not implemented" .-> BR["Spark Bronze"]
+  RAW -->|"full runtime/readback PASS"| BR["Spark Bronze Delta — duplicates retained"]
   NOV["November CSV"] -->|"bounded runtime verified; see evidence"| RP["Replay Producer"]
   RP -->|"bounded runtime verified; see evidence"| K["Kafka: broker/API learner outputs; bounded replay verified"]
   COMPOSE["compose.yaml"] -->|"static service declaration only"| K
@@ -275,7 +275,7 @@ In LEGACY source, the stream's raw-event staging branch declares preservation of
 
 ## Known contract gaps to resolve in implementation milestones
 
-1. Batch Generator small MinIO readback PASS; full-output/≥100 GB remain unverified. November Replay Producer/readback and Kafka Compose are present; bounded CLI replay/resume/readback đã verify; full scale/recreate/exactly-once unverified. See [Kafka evidence](docs/kafka_stream_replay.md). See [MinIO evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06).
+1. Batch Generator small and full October source MinIO readback PASS; ≥100 GB remains unverified. November Replay Producer/readback and Kafka Compose are present; bounded CLI replay/resume/readback đã verify; full scale/recreate/exactly-once unverified. See [Kafka evidence](docs/kafka_stream_replay.md). See [MinIO evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06).
 2. Choose a stable event identity/dedup policy; LEGACY composite dedup can merge distinct events and LEGACY fact hash omits event type; no downstream dedup implementation exists on rebuild-clean.
 3. Align Spark historical and Flink realtime 15m feature definitions, timestamp field, watermark/late-data availability policy, and output keys.
 4. Sample cadence/eligibility and replay clock remain OPEN; event time alone cannot reconstruct historical arrival/availability. Future prediction triggering and feature-time alignment are outside current DE scope and unresolved.
@@ -286,10 +286,38 @@ In LEGACY source, the stream's raw-event staging branch declares preservation of
 Other OPEN decisions (full event source, persistence, revisions, write/job mapping, access formats, retention/versioning and DAG boundaries) remain listed in [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); no choices are closed by this documentation sync.
 
 
-## Batch Generator complete-source mode — corrected injection, runtime pending
+## Batch Generator complete-source mode — corrected injection, runtime verified
 
 `--mode source --action ingest` reads all October source records and emits two schema-versioned CSV objects using the agreed UTC boundary. All source records and original nine field strings are preserved; NEW adds synthetic discount_percent. Config `fault_injection.duplicate.enabled/rate` controls exact per-schema injection: after source row n, if floor(n×rate) increases, emit one adjacent identical adapted-row copy. Rate must be in [0,1]; manifest separates source counts, duplicate_counts, output_counts, injected_duplicates, rate and rule. At 2%, copied rows have the same discount as their original. This rule is periodic, not random. Natural duplicates remain distinct from injected copies; no business identity inferred.
 
-Source mode forbids enabled synthetic skew/drift, preserves natural skew and does not sample/replicate/change source IDs/prices/times. Original CSV stays local. Prefix holds raw_events_old.csv, raw_events_new.csv and manifest.json; no local CSV output. Manifest records hashes/bytes/counts. Verify reads all output, checks bytes/hash plus CSV header/field counts, UTC schema membership, discount values, source/output counts and scheduled duplicate pairs, reports audits in local readback.json. Natural duplicates/skew statistics/feature-label coverage not audited; downstream dedup policy OPEN. Corrected full October runtime verified for declared hash/schema/date/count/copy-pair checks; natural duplicates/skew/scale/downstream remain unverified; superseded no-injection run summarized in [evidence](docs/evidence/batch_generator_october.json). [Guide](docs/batch_generator.md).
+Source mode forbids enabled synthetic skew/drift, preserves natural skew and does not sample/replicate/change source IDs/prices/times. Original CSV stays local. Prefix holds raw_events_old.csv, raw_events_new.csv and manifest.json; no local CSV output. Manifest records hashes/bytes/counts. Verify reads all output, checks bytes/hash plus CSV header/field counts, UTC schema membership, discount values, source/output counts and scheduled duplicate pairs, reports audits in local readback.json. Natural duplicates/skew statistics/feature-label coverage not audited; downstream dedup policy OPEN. Corrected full October runtime verified for declared hash/schema/date/count/copy-pair checks; natural duplicates/skew/scale/downstream remain unverified; superseded no-injection run summarized in [component history](docs/batch_generator.md#superseded-run-without-duplicate-injection). [Guide](docs/batch_generator.md).
 
 Source evidence export is automatic only when explicitly requested by `--evidence-output` after successful full readback/audit. Ratios distinguish injected copies/source records from injected copies/output records; neither measures natural duplicates. The JSON includes timing scopes, versions/code hash, manifest/readback and limitations; failed verification does not replace an existing report.
+
+## Spark Raw → Bronze handoff — current input, proposed consumer
+
+The authoritative verified input is bucket `ecommerce-raw`, prefix `source/rees46/2019-10/20261008-04`. Spark must read these **explicit objects separately**, not the bucket root or a directory containing JSON:
+
+```text
+s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_old.csv
+s3a://ecommerce-raw/source/rees46/2019-10/20261008-04/raw_events_new.csv
+```
+
+| Object | Schema / UTC event interval | Verified output rows (excluding header) | Bytes |
+| --- | --- | ---: | ---: |
+| `raw_events_old.csv` | 9 source columns; `[2019-10-01,2019-10-16)` | 20,851,661 | 2,802,940,819 |
+| `raw_events_new.csv` | Same 9 + `discount_percent`; `[2019-10-16,2019-11-01)` | 22,446,078 | 3,076,199,711 |
+
+`manifest.json` is metadata, not event input. Total 43,297,739 output rows includes 42,448,764 source rows and 848,975 deliberately injected copies. Bronze must preserve multiplicities: no `distinct`, `dropDuplicates`, aggregation or undocumented row filtering. Natural duplicate count/business event identity remains OPEN; do not equate identical fields with a proven unique event. Distributed row order is not guaranteed; the producer's adjacent-copy audit is not a Silver dedup key.
+
+Implemented Spark slice: explicit string schemas per object, validate header/CSV options, add nullable `discount_percent` to OLD, union by column name and retain source-object/schema provenance. Present empty fields become empty strings, absent OLD discount becomes null; local CSV/Delta fixtures PASS; original event_time/ID/price text must not be silently inferred/cast away. Full Spark/Delta readback is **verified** in [full evidence](docs/evidence/spark_raw_to_bronze_full.json); counts above were reconciled for the full run.
+
+Evidence verifies remote bytes and declared schema/date/count/copy schedule against the producer manifest; it does not independently reconstruct every source event. Full October alone cannot provide pre-October history or post-October outcomes: eligibility near dataset edges and incomplete user history must be addressed before feature/label computation. No feature-label completeness claim follows from this handoff.
+
+### Bronze representation — fixture and full readback verified
+
+The bounded job now exists in `src/spark/raw_to_bronze.py`; previous statements of no Spark implementation describe the earlier baseline. Its ten business columns are strings; present empty fields are normalized to empty strings, while absent OLD discount is null. Adds `_source_object` and `_schema_version` strings, `_run_id` string and `_ingested_at` UTC timestamp fixed at job start (not original event arrival time). Delta may widen nullability; readback enforces field names/types/order and row multiplicities, not exact nullability. Native CSV/Delta fixtures and full runtime readback PASS. Output uses an isolated `ecommerce-lakehouse/bronze/raw_events/verification/<run-id>` Delta table, never the raw prefix. No business identity or Silver dedup decision is made.
+
+### Explicit full October Bronze mode — runtime verified
+
+`--mode full` forbids a row limit; smoke remains default. Full input and Bronze readback must both match producer output_counts: OLD 20,851,661 / NEW 22,446,078, total 43,297,739 (including 848,975 injected copies). These counts were reconciled in full run `october-full-01` ([evidence](docs/evidence/spark_raw_to_bronze_full.json)), Delta version 0. All business field/null/provenance rules above remain unchanged. Full Delta output is a fresh table at `s3a://ecommerce-lakehouse/bronze/raw_events/<run-id>`; no append, overwrite or use of the smoke table as production input. No Silver dedup or feature/label completeness claim. Separate full evidence must be requested; prior smoke evidence remains immutable.

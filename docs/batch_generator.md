@@ -99,14 +99,14 @@ Evidence JSON/manifest/log và script readback đã được dọn. Không dựa
 
 ## Limits and debugging path
 
-Full October **output**, medium/full scale, replication, MinIO delivery and downstream systems remain NOT YET VERIFIED. Reading all October input for reservoir sampling is not a full-output run. No rubric criterion was marked complete from these results.
+At this historical local-test stage, full October **output**, medium/full scale, replication, MinIO delivery and downstream systems remained NOT YET VERIFIED. Reading all October input for reservoir sampling is not a full-output run. No rubric criterion was marked complete from these results.
 
 For a wrong schema row, inspect parsed timestamp and `_classify_chunk` before sampling; compare source classification counts with selected counts and then output counts. For a short sample, inspect population/quota warnings. For malformed source time, inspect INVALID count. For local output issues, inspect manifest and independently verify output; the old readback script is no longer present. Batch Generator stopped after Level 2 for learner review; no Batch Generator — schema and deterministic fields work.
 
 
 ## Batch Generator — complete October direct MinIO ingest
 
-Ngày 2026-10-08, Asia/Ho_Chi_Minh. Source implementation + simulated-S3 unit verification only; full October/real MinIO integration **NOT VERIFIED**. Uses project boto3==1.34.0, python-dotenv==1.2.1; actual learner versions must be checked. Python unit environment 3.13.12.
+Initial implementation stage on 2026-10-08 used simulated-S3 tests only (Python 3.13.12). Current full October native readback is PASS; see the runtime result below. Project pins boto3==1.34.0 and python-dotenv==1.2.1; measured learner runtime versions are recorded in evidence.
 
 Input is configured `batch_generator.input_csv`. Source mode reads every CSV record, validates header/field count/second-resolution UTC membership, preserves all source records and their nine original field strings, including natural duplicate multiplicities, before adding synthetic copies. OLD `[Oct 01,Oct 16)` has nine columns; NEW `[Oct 16,Nov 01)` adds deterministic synthetic discount_percent from configured seed/source-record hash. No sampling, replica, synthetic skew or drift. Configured duplicate injection is enabled: each schema emits floor(source_count × rate) adjacent identical copies at quota increments; this is deterministic periodic injection, not random sampling. Natural skew is preserved, not statistically audited by this verifier. Natural duplicate business identity and complete feature/label coverage remain unresolved.
 
@@ -124,7 +124,7 @@ flowchart LR
   V --> R["local readback.json"]
 ```
 
-Dashed external connections are planned runtime, not verified. Multipart pieces are transport pieces, not extra CSV files. Buffers configured 64 MiB per schema; transient serialization/request copies add RAM overhead, so this is not a total RSS cap. Local run directory contains only manifest/readback JSON; original CSV remains local. MinIO still consumes local disk (~5.5 GiB additional estimated, not measured). Source hash before/after means additional full file reads; no throughput/runtime claim.
+Dashed connections show multipart completion/readback steps; these external steps now have full October native readback evidence, not Spark evidence. Multipart pieces are transport pieces, not extra CSV files. Buffers configured 64 MiB per schema; transient serialization/request copies add RAM overhead, so this is not a total RSS cap. Local run directory contains only manifest/readback JSON; original CSV remains local. MinIO still consumes local disk (5,879,140,530 CSV payload bytes measured; filesystem overhead not measured). Source hash before/after means additional full file reads; measured timings appear below and are not throughput benchmarks.
 
 ### Learner commands
 
@@ -146,7 +146,7 @@ This command reads full October and writes three objects to a fresh MinIO prefix
 python -m src.generator.batch_generator --mode source --action ingest --run-dir artifacts/october-source-20261008-04 --prefix source/rees46/2019-10/20261008-04
 ```
 
-Progress every million records. Successful output is `UPLOADED_NOT_VERIFIED`; expected count from prior inspection is 42,448,764 total, OLD 20,442,805 and NEW 22,005,959, not a result of the corrected job. At rate 0.02 expected injected copies are OLD 408,856 and NEW 440,119; expected outputs OLD 20,851,661 and NEW 22,446,078, total 43,297,739. These are expectations, require runtime audit. Remote keys: raw_events_old.csv, raw_events_new.csv, manifest.json. The manifest is written only after both CSV objects complete and source hash is unchanged. This does not equal readback PASS.
+Progress every million records. Successful output is `UPLOADED_NOT_VERIFIED`; expected count from prior inspection is 42,448,764 total, OLD 20,442,805 and NEW 22,005,959, subsequently confirmed by the corrected runtime below. At rate 0.02 expected injected copies are OLD 408,856 and NEW 440,119; expected outputs OLD 20,851,661 and NEW 22,446,078, total 43,297,739. These expectations were confirmed by runtime audit below. Remote keys: raw_events_old.csv, raw_events_new.csv, manifest.json. The manifest is written only after both CSV objects complete and source hash is unchanged. This does not equal readback PASS.
 
 Then read all remote objects, compare bytes/SHA-256 and independently parse CSV headers, field counts, UTC OLD/NEW membership, discount membership, source/output counts and scheduled identical-copy pairs. Write only local readback.json:
 
@@ -168,24 +168,28 @@ Require three `READBACK_PASS` lines and completed readback.json. A verification 
 
 ### Superseded run without duplicate injection
 
-Learner ran ingest then native verify on `20261008-03`. Full source count 42,448,764 and bytes/hash readback PASS, but injected_duplicates=0 did not meet requested fault scope. Not a corrected-run PASS or full rubric completion. Only a one-line superseded status remains in [pending corrected evidence](evidence/batch_generator_october.json), per learner request; old full snapshots removed. Agent inspected exact three remote keys/sizes, deleted only that prefix's objects with learner authorization and confirmed prefix empty by S3 list; no unfinished multipart uploads. Local two JSON files and empty run directory removed afterwards. No bucket, sampled prefix, original CSV or Kafka artifact changed. Snapshot timestamps are artifact creation/verification times, not measured whole-job duration.
+Learner ran ingest then native verify on `20261008-03`. Full source count 42,448,764 and bytes/hash readback PASS, but injected_duplicates=0 did not meet requested fault scope. Not a corrected-run PASS or full rubric completion. Superseded: no-injection run did not satisfy the requested fault scope. Its old full snapshots were removed previously at learner request; current evidence describes only the corrected run. Agent inspected exact three remote keys/sizes, deleted only that prefix's objects with learner authorization and confirmed prefix empty by S3 list; no unfinished multipart uploads. Local two JSON files and empty run directory removed afterwards. No bucket, sampled prefix, original CSV or Kafka artifact changed. Snapshot timestamps are artifact creation/verification times, not measured whole-job duration.
 
-Corrected schema/duplicate audit is implemented with simulated-S3 tests only. Natural duplicate count is NOT_AUDITED; injected copies are measured separately. Source preservation follows code and count/hash checks; business event identity/dedup remains unresolved. Spark must not simply drop all identical rows without defining how valid source multiplicities are preserved. Rubric ≥100 GB and statistical skew audit remain unverified.
+At this superseded stage, corrected schema/duplicate audit had simulated-S3 tests only; the later full runtime result below supersedes that status. Natural duplicate count is NOT_AUDITED; injected copies are measured separately. Source preservation follows code and count/hash checks; business event identity/dedup remains unresolved. Spark must not simply drop all identical rows without defining how valid source multiplicities are preserved. Rubric ≥100 GB and statistical skew audit remain unverified.
 
 ### Evidence ownership and timing
 
-One current evidence JSON: [batch_generator_october.json](evidence/batch_generator_october.json), pending corrected runtime. Historical MinIO note/manifest JSON removed at learner request; only concise history in roadmap, no historical snapshot copied into the current report. Kafka evidence unchanged.
+One current evidence JSON: [batch_generator_october.json](evidence/batch_generator_october.json), corrected native runtime PASS. Historical MinIO note/manifest JSON removed at learner request; only concise history in roadmap, no historical snapshot copied into the current report. Kafka evidence unchanged.
 
-Ingest manifest now records `timing.started_timestamp`, `finished_timestamp`, `elapsed_seconds` (monotonic duration) with explicit scope: includes preflight, source hashing, CSV processing/upload; excludes final manifest publication. Verify readback includes its own start/end/elapsed, covering complete remote hash/schema/date/count/copy audit, excluding local report write. Timing is not a throughput benchmark. Counts and schema audits already implemented; corrected full runtime remains pending. Natural duplicate total/statistical skew/≥100 GB remain unverified.
+Ingest manifest now records `timing.started_timestamp`, `finished_timestamp`, `elapsed_seconds` (monotonic duration) with explicit scope: includes preflight, source hashing, CSV processing/upload; excludes final manifest publication. Verify readback includes its own start/end/elapsed, covering complete remote hash/schema/date/count/copy audit, excluding local report write. Timing is not a throughput benchmark. Counts and schema audits already implemented; corrected full runtime subsequently PASS (see below). Natural duplicate total/statistical skew/≥100 GB remain unverified.
 
 ### Automatic evidence export
 
 Source verify accepts `--evidence-output docs/evidence/batch_generator_october.json`. Only after all remote checks pass does it atomically replace the evidence JSON, containing manifest, readback, measured injected duplicate/source and duplicate/output ratios, UTC start/end/elapsed, Python/boto3/botocore versions, code SHA-256 and local artifact hashes. Console prints EVIDENCE_WRITTEN. No manual numeric transcription is needed. Evidence status VERIFIED_DECLARED_CHECKS refers only to declared checks, not full rubric.
 
-If verification fails, current readback is absent and evidence is left unchanged (an older successful report, if present, describes its own timestamp/prefix, not the failed attempt). Export path must differ from manifest/readback and have an existing directory. Evidence contains no credentials. Ingest writes MinIO and small local manifest; verify reads MinIO and writes local reports plus the explicitly requested tracked evidence file. No auto-commit. 18 unit tests PASS with simulated S3; corrected October runtime still pending.
+If verification fails, current readback is absent and evidence is left unchanged (an older successful report, if present, describes its own timestamp/prefix, not the failed attempt). Export path must differ from manifest/readback and have an existing directory. Evidence contains no credentials. Ingest writes MinIO and small local manifest; verify reads MinIO and writes local reports plus the explicitly requested tracked evidence file. No auto-commit. 18 unit tests PASS with simulated S3; corrected October native runtime subsequently PASS (see below).
 
 ## Full October runtime result — 2026-10-08
 
 Learner executed ingest and verify for 20261008-04 including --evidence-output; actual automatic [report](evidence/batch_generator_october.json) supersedes pending descriptions above. Python 3.11.17/boto3 1.34.0/botocore 1.34.162. Source OLD/NEW=20,442,805/22,005,959; injected copies=408,856/440,119; output=20,851,661/22,446,078. Total 43,297,739 rows and 5,879,140,530 CSV bytes. Full remote header/field/date/discount/count/scheduled-copy-pair and SHA-256 checks PASS. Local manifest/readback and code hashes agree with evidence snapshot; no local output CSVs. Agent inspection only, no agent workload rerun.
 
-Ingest 583.4097s, verify 391.7169s, exact UTC timestamps/scopes in report; not benchmark. Ingest manifest's UPLOADED_NOT_VERIFIED is its historical stage status; final readback is READBACK_PASS. Natural duplicates/statistical skew/≥100 GB/Spark/feature-label coverage not verified. Learner explanation pending; stop for review/save before Spark proposal.
+Ingest 583.4097s, verify 391.7169s, exact UTC timestamps/scopes in report; not benchmark. Ingest manifest's UPLOADED_NOT_VERIFIED is its historical stage status; final readback is READBACK_PASS. Natural duplicates/statistical skew/≥100 GB/feature-label coverage not verified. Learner reviewed/pushed baseline `d890e26`; Spark handoff has since completed as recorded below.
+
+## Spark handoff
+
+Use the [exact OLD/NEW input contract](../DATA_CONTRACT.md#spark-raw--bronze-handoff--current-input-proposed-consumer), preserving all duplicate multiplicities. Current inspection confirms object inventory, sizes, headers and manifest hash; Spark full Raw → Bronze now has [readback PASS](evidence/spark_raw_to_bronze_full.json): 43,297,739 rows, duplicates retained; Silver/feature-label correctness not established. Existing commands above describe the completed run and reproduction on a **new** destination, not an instruction to rerun ingestion or overwrite current evidence. Historical evidence and Kafka artifacts remain unchanged during this handoff review.
