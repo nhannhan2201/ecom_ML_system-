@@ -193,3 +193,5 @@ Ingest 583.4097s, verify 391.7169s, exact UTC timestamps/scopes in report; not b
 ## Spark handoff
 
 Use the [exact OLD/NEW input contract](../DATA_CONTRACT.md#spark-raw--bronze-handoff--current-input-proposed-consumer), preserving all duplicate multiplicities. Current inspection confirms object inventory, sizes, headers and manifest hash; Spark full Raw → Bronze now has [readback PASS](evidence/spark_raw_to_bronze_full.json): 43,297,739 rows, duplicates retained; Silver/feature-label correctness not established. Existing commands above describe the completed run and reproduction on a **new** destination, not an instruction to rerun ingestion or overwrite current evidence. Historical evidence and Kafka artifacts remain unchanged during this handoff review.
+
+Historical storage clarification: the learner deleted the old benchmark `batch/` prefix. Current October Raw input is only `source/rees46/2019-10/20261008-04/` (OLD/NEW CSV + manifest); historical commands/results are retained, not a claim that old objects still exist.

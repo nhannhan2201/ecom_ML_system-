@@ -9,7 +9,7 @@ Giữ [ghi chú Batch Generator batch selection và lịch sử small local read
 | Generator | [Batch Generator batch selection](batch_generator.md) | 18 unit cases PASS; [October runtime evidence](evidence/batch_generator_october.json): full 43,297,739 output rows, schema/date/injected-copy/hash PASS; natural duplicate/skew/≥100 GB unverified |
 | Kafka Stream Replay | [Bounded replay/recovery evidence](kafka_stream_replay.md) | Native 2.031/3.041 message readback PASS; bounded producer resume verified; scale/exactly-once unverified |
 | Flink | TBD — implementation proposal requires learner approval | Not implemented / not verified |
-| Spark Raw → Bronze | [Full evidence](evidence/spark_raw_to_bronze_full.json), [smoke evidence](evidence/spark_raw_to_bronze.json), [command/explanation](../IMPLEMENTATION_ROADMAP.md#spark-raw--bronze--full-runtime-pass--2026-10-08) | Full 43,297,739 rows READBACK_PASS; 25 fixture/mock tests PASS; Silver/Gold/DWH/optimization not verified |
+| Spark Raw → Bronze | [Full evidence](evidence/spark_raw_to_bronze_full.json), [smoke evidence](evidence/spark_raw_to_bronze.json), [command/explanation](../IMPLEMENTATION_ROADMAP.md#spark-raw--bronze--full-runtime-pass--2026-10-08) | Full 43,297,739 rows READBACK_PASS; 47 fixture/mock tests PASS (native dependencies required, no silent SKIP); Silver/Gold/DWH/optimization not verified |
 | Airflow | TBD — add after DAG runtime milestone | Not verified |
 | Feast / Redis | TBD — add after feature-store milestone | Not verified |
 | Governance | TBD — add after DataHub verification | Not verified |

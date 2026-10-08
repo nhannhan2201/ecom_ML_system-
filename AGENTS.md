@@ -4,7 +4,7 @@ This file explains how to maintain the project's documentation and verified prog
 
 ## Code organization preference
 
-Prefer a small number of cohesive files. Extend the owning component, config, tests and component note before creating a parallel entrypoint or document. Split files only when an independent responsibility makes maintenance clearer; explain the reason first. Keep historical evidence unchanged.
+Prefer a small number of cohesive files. Extend the owning component, config, tests and component note before creating a parallel entrypoint or document. Split files only when an independent responsibility makes maintenance clearer; explain the reason first. Keep historical evidence unchanged. Keep tests beginner-readable and focused on data contracts, important failure cases and rubric requirements. Prefer small fixtures and clear names; avoid redundant cases or elaborate mocks without a concrete need.
 
 ## Documentation ownership
 

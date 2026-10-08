@@ -1,4 +1,4 @@
-"""Pure checks run without Spark; native fixture checks require pinned runtime/JARs."""
+"""Native verification is mandatory: missing/wrong Spark dependencies fail, never skip."""
 import csv
 import io
 from datetime import datetime, timezone
@@ -44,15 +44,19 @@ def test_preflight_rejects_wrong_input_before_write():
     client.put_object.assert_not_called()
 
 
-@pytest.fixture(scope='module')
-def spark():
+def require_native_versions():
     from importlib.metadata import PackageNotFoundError, version
     try:
         versions = (version('pyspark'), version('delta-spark'))
     except PackageNotFoundError:
-        pytest.skip('Native Spark fixtures need pyspark 3.5.0 / delta-spark 3.0.0 and Delta JARs')
+        pytest.fail('Native Spark verification requires pyspark==3.5.0 and delta-spark==3.0.0; activate ecom-rebuild', pytrace=False)
     if versions != ('3.5.0', '3.0.0'):
-        pytest.skip('Native fixtures require pinned Spark/Delta versions')
+        pytest.fail(f'Native Spark verification requires versions (3.5.0, 3.0.0), found {versions}', pytrace=False)
+
+
+@pytest.fixture(scope='module')
+def spark():
+    require_native_versions()
     from pyspark.sql import SparkSession
     session = (SparkSession.builder.master('local[2]').appName('BronzeFixture')
                .config('spark.ui.enabled', 'false')
@@ -101,7 +105,8 @@ def test_native_csv_union_delta_roundtrip(spark, tmp_path):
     from pyspark.sql import functions as F
     with pytest.raises(ValueError, match='values/multiplicities'):
         verify_bronze(expected, actual.withColumn('price', F.lit('changed')))
-    with pytest.raises(Exception):
+    from pyspark.errors import AnalysisException
+    with pytest.raises(AnalysisException, match='already exists|already existent|PATH.*EXISTS'):
         write_bronze(expected, destination)
     with pytest.raises(ValueError, match='counts mismatch'):
         verify_bronze(expected, actual.dropDuplicates())
@@ -111,7 +116,8 @@ def test_native_csv_union_delta_roundtrip(spark, tmp_path):
 def test_native_wrong_header_fails(spark, tmp_path):
     path = tmp_path / 'bad.csv'
     path.write_text('wrong,' + ','.join(COLUMNS[1:]) + '\n' + ','.join(['x'] * 9) + '\n')
-    with pytest.raises(Exception):
+    from py4j.protocol import Py4JJavaError
+    with pytest.raises(Py4JJavaError, match='CSV header does not conform'):
         read_csv(spark, str(path), 'old', 1000).collect()
 
 
@@ -243,3 +249,154 @@ def test_existing_evidence_is_never_replaced(tmp_path, monkeypatch):
         job.main()
     assert evidence.read_text() == 'historical evidence'
     assert not (tmp_path / 'artifacts').exists()
+
+
+@pytest.mark.parametrize('missing', [True, False], ids=['missing-runtime', 'wrong-version'])
+def test_native_requirement_fails_instead_of_skipping(monkeypatch, missing):
+    from importlib import metadata
+    def version(_):
+        if missing:
+            raise metadata.PackageNotFoundError('fixture-package')
+        return '0.0.0'
+    monkeypatch.setattr(metadata, 'version', version)
+    with pytest.raises(pytest.fail.Exception, match='Native Spark verification requires'):
+        require_native_versions()
+
+
+@pytest.mark.parametrize('version', ['old', 'new'])
+@pytest.mark.parametrize('difference', [-1, 1], ids=['missing-field', 'extra-field'])
+def test_native_rejects_wrong_row_width(spark, tmp_path, version, difference):
+    from py4j.protocol import Py4JJavaError
+    row = ['2019-10-15 23:59:59 UTC', 'view', '1', '2', 'code', 'brand', '1.00', '3', 'session']
+    if version == 'new':
+        row += ['4']
+    row = row[:-1] if difference == -1 else row + ['extra']
+    uri = fixture_csv(tmp_path / 'wrong-width.csv', version, [row])
+    # Persist mirrors production: a plain count() may prune CSV columns and miss errors.
+    frame = read_csv(spark, uri, version, None).persist()
+    try:
+        with pytest.raises(Py4JJavaError, match='MALFORMED_RECORD_IN_PARSING|MALFORMED_CSV_RECORD'):
+            frame.groupBy('_schema_version').count().collect()
+    finally:
+        frame.unpersist()
+
+
+def test_native_rejects_eleven_column_header(spark, tmp_path):
+    from py4j.protocol import Py4JJavaError
+    path = tmp_path / 'header-eleven.csv'
+    path.write_text(','.join(COLUMNS + ['discount_percent', 'unexpected']) + '\n'
+                    + ','.join(['x'] * 11) + '\n')
+    with pytest.raises(Py4JJavaError, match='Header length: 11, schema size: 10'):
+        read_csv(spark, str(path), 'new', None).collect()
+
+
+@pytest.mark.parametrize('brand,expected', [('', ''), ('""', ''), ('null', 'null')],
+                         ids=['unquoted-empty', 'quoted-empty', 'literal-null'])
+def test_native_empty_and_literal_null_semantics(spark, tmp_path, brand, expected):
+    path = tmp_path / 'empty.csv'
+    path.write_text(','.join(COLUMNS + ['discount_percent']) + '\n'
+                    + f'2019-10-16 00:00:00 UTC,view,1,2,code,{brand},1.00,3,session,4\n')
+    row = read_csv(spark, str(path), 'new', None).collect()[0]
+    assert row.brand == expected
+    assert row.discount_percent == '4'
+
+
+@pytest.mark.parametrize('brand', ['"unclosed', '"two\nlines"'],
+                         ids=['unclosed-quote', 'multiline-not-supported'])
+def test_native_rejects_parser_edge_cases(spark, tmp_path, brand):
+    from py4j.protocol import Py4JJavaError
+    path = tmp_path / 'bad-parser.csv'
+    path.write_text(','.join(COLUMNS + ['discount_percent']) + '\n'
+                    + f'2019-10-16 00:00:00 UTC,view,1,2,code,{brand},1.00,3,session,4\n')
+    with pytest.raises(Py4JJavaError, match='MALFORMED_RECORD_IN_PARSING|MALFORMED_CSV_RECORD'):
+        read_csv(spark, str(path), 'new', None).collect()
+
+
+@pytest.fixture
+def bronze_fixture(spark):
+    from pyspark.sql import functions as F
+    # JVM-only construction: no Python-worker dependency or MinIO connection.
+    base = spark.range(3).select(*[F.lit('value').alias(c) for c in COLUMNS + ['discount_percent']],
+                                 F.when(F.col('id') < 2, F.lit('A')).otherwise(F.lit('B')).alias('variant'))
+    base = base.withColumn('brand', F.col('variant')).drop('variant')
+    return (base.withColumn('_source_object', F.lit('fixture'))
+            .withColumn('_schema_version', F.lit('new'))
+            .withColumn('_run_id', F.lit('fixture'))
+            .withColumn('_ingested_at', F.lit('2026-10-08T00:00:00Z').cast('timestamp')))
+
+
+@pytest.mark.parametrize('mutation', ['extra', 'missing', 'type', 'order'])
+def test_native_rejects_readback_schema_changes(bronze_fixture, mutation):
+    from pyspark.sql import functions as F
+    frame = bronze_fixture
+    changes = {
+        'extra': lambda: frame.withColumn('unexpected', F.lit('x')),
+        'missing': lambda: frame.drop('brand'),
+        'type': lambda: frame.withColumn('price', F.lit(1.0)),
+        'order': lambda: frame.select(*reversed(frame.columns)),
+    }
+    with pytest.raises(ValueError, match='Readback schema mismatch'):
+        verify_bronze(frame, changes[mutation]())
+
+
+@pytest.mark.parametrize('mutation', ['missing-row', 'extra-row', 'value', 'multiplicity'])
+def test_native_rejects_readback_data_changes(bronze_fixture, mutation):
+    from pyspark.sql import functions as F
+    frame = bronze_fixture
+    changes = {
+        'missing-row': lambda: frame.limit(2),
+        'extra-row': lambda: frame.unionByName(frame.limit(1)),
+        'value': lambda: frame.withColumn('price', F.lit('changed')),
+        # A,A,B -> A,B,B: equal total/per-schema counts, different multiplicities.
+        'multiplicity': lambda: frame.filter("brand = 'A'").limit(1).unionByName(
+            frame.filter("brand = 'B'")).unionByName(frame.filter("brand = 'B'")),
+    }
+    message = 'counts mismatch' if mutation in ('missing-row', 'extra-row') else 'values/multiplicities mismatch'
+    with pytest.raises(ValueError, match=message):
+        verify_bronze(frame, changes[mutation]())
+
+
+def test_native_old_discount_rule_is_checked_even_when_frames_match(bronze_fixture):
+    from pyspark.sql import functions as F
+    bad = bronze_fixture.withColumn('_schema_version', F.lit('old'))
+    with pytest.raises(ValueError, match='OLD discount must be null'):
+        verify_bronze(bad, bad)
+
+
+def test_readback_failure_after_write_never_exports_pass(tmp_path, monkeypatch):
+    import json
+    import sys
+    from src.spark import raw_to_bronze as job
+    config = load_config('config/spark_config.yaml')
+    monkeypatch.setattr(job, 'load_config', lambda _: config)
+    monkeypatch.setattr('dotenv.load_dotenv', lambda *a, **k: None)
+    monkeypatch.setattr('boto3.client', Mock())
+    monkeypatch.setattr(job, 'preflight', lambda *a: {})
+    # main reads the evidence file after preflight; use a tiny local stand-in.
+    evidence_input = tmp_path / 'source.json'
+    evidence_input.write_text('{}')
+    config['input']['evidence'] = str(evidence_input)
+    spark_mock, frame = Mock(), Mock()
+    frame.persist.return_value = frame
+    frame.groupBy.return_value.count.return_value.collect.return_value = [
+        {'_schema_version': 'old', 'count': 1}, {'_schema_version': 'new', 'count': 1}]
+    monkeypatch.setattr(job, 'create_spark', lambda _: spark_mock)
+    monkeypatch.setattr(job, 'read_csv', Mock())
+    monkeypatch.setattr(job, 'build_bronze', lambda *a: frame)
+    writer = Mock()
+    monkeypatch.setattr(job, 'write_bronze', writer)
+    def fail_readback(*a):
+        raise ValueError('Readback values/multiplicities mismatch')
+    monkeypatch.setattr(job, 'verify_bronze', fail_readback)
+    monkeypatch.chdir(tmp_path)
+    evidence = tmp_path / 'never-pass.json'
+    monkeypatch.setattr(sys, 'argv', ['job', '--run-id', 'readback-failure', '--evidence-output', str(evidence)])
+    with pytest.raises(RuntimeError, match='Raw -> Bronze failed'):
+        job.main()
+    writer.assert_called_once()
+    report = json.loads((tmp_path / 'artifacts/spark-raw-to-bronze/readback-failure/report.json').read_text())
+    assert report['status'] == 'FAILED'
+    assert report['failed_after'] == 'WRITE_SUCCEEDED'
+    assert not evidence.exists()
+    frame.unpersist.assert_called_once()
+    spark_mock.stop.assert_called_once()
