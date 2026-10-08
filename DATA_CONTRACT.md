@@ -8,7 +8,7 @@ Related documents: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) describes th
 
 ## Branch scope
 
-- **CURRENT rebuild-clean:** Batch Generator, its YAML/config/tests and Compose declarations for MinIO plus Kafka. Small Batch Generator → MinIO runtime readback PASS; Replay Producer/readback source và unit tests đã có; November replay/restart/persistence runtime NOT VERIFIED; no downstream implementation. Broker/API learner outputs được phân loại riêng trong CURRENT_IMPLEMENTATION.md. Retained dependency/config declarations do not prove a service or consumer exists.
+- **CURRENT rebuild-clean:** Batch Generator, its YAML/config/tests and Compose declarations for MinIO plus Kafka. Small Batch Generator → MinIO runtime readback PASS; Replay Producer/readback source và unit tests đã có; bounded November replay/resume/readback verified ([evidence](docs/kafka_stream_replay.md)); full scale/recreate unverified; no downstream implementation. Broker/API learner outputs được phân loại riêng trong CURRENT_IMPLEMENTATION.md. Retained dependency/config declarations do not prove a service or consumer exists.
 - **LEGACY old-vibe-backup:** historical Spark/Flink/Feast/Airflow/DWH/governance/stream source, recorded at snapshot `2cf00cf`. Paths, schemas and mismatches marked LEGACY below are reference only; reuse requires validation against TARGET.
 - **TARGET:** learner-approved DE flow ends at a Feature–Label Dataset; implementation gaps remain. See [target flow and OPEN decisions](TARGET_ARCHITECTURE.md).
 
@@ -62,8 +62,8 @@ CURRENT sections describe retained source and link named runtime evidence. LEGAC
 
 - **Purpose / grain:** one REES46 CSV source row per event as provided by the file.
 - **Producer:** external dataset; CURRENT readers are `src/generator/batch_generator.py` and `src/generator/replay_producer.py`. LEGACY reader `src/generator/stream_generator.py` is absent from rebuild-clean.
-- **Consumers:** CURRENT Batch Generator → MinIO raw CSV. CURRENT November Replay Producer → Kafka is implemented but runtime unverified; historical stream behavior is LEGACY below.
-- **Physical location:** batch input `2019-Oct.csv`; streaming config declares `2019-Nov.csv`, UTC interval `[2019-11-01,2019-12-01)`. Replay Producer và Compose Kafka đã có source; CLI November → Kafka chưa được learner verify runtime.
+- **Consumers:** CURRENT Batch Generator → MinIO raw CSV. CURRENT November Replay Producer → Kafka has bounded runtime/readback evidence; historical stream behavior is LEGACY below.
+- **Physical location:** batch input `2019-Oct.csv`; streaming config declares `2019-Nov.csv`, UTC interval `[2019-11-01,2019-12-01)`. Replay Producer và Compose Kafka đã có source; bounded CLI November → Kafka đã có [readback evidence](docs/kafka_stream_replay.md); full replay chưa verify.
 - **Schema:** source header columns are split as CSV text. Batch Generator uses pandas CSV parsing/type inference and UTC event_time classification; Replay Producer validation/null rules được ghi trong CURRENT stream contract bên dưới; removed parser rules vẫn là LEGACY. The source files were not rewritten/read through a data audit in this documentation task.
 
 | Column | Logical type | CURRENT behavior / LEGACY parser behavior |
@@ -90,12 +90,12 @@ CURRENT sections describe retained source and link named runtime evidence. LEGAC
 
 ### Stream event record and Kafka topic — CURRENT rebuild-clean
 
-- **Status:** implemented + fixture/fake-client unit verification; native November replay, late/duplicate readback, broker persistence and restart/resume are **NOT VERIFIED**. Existing broker/API learner outputs are separate from CLI verification.
+- **Status:** implemented + unit verification; bounded native November ACK/readback và producer interrupt/resume đã verify, cùng journal readback sau broker bật lại theo learner ([evidence](docs/kafka_stream_replay.md)). Full replay/scale, exactly-once và container-recreate persistence chưa verify. Existing broker/API learner outputs are separate from CLI verification.
 - **Producer / consumer:** `src/generator/replay_producer.py` delegates delivery/scheduling to `src/generator/replay_runtime.py`; bounded audit consumer is `scripts/verify_kafka_replay.py`. Flink and durable stream archive remain absent.
 - **Input / grain:** source-order November CSV over `[2019-11-01,2019-12-01)` UTC, one message per accepted source event plus injected copies. `max-events` bounds accepted source events, not message count. Strict header/field count, parsed UTC non-decreasing timestamp, int64 IDs and finite price; invalid records fail with record/physical-line location, valid out-of-range records are excluded. `event_type` is nonempty but not enum-validated; finite price is not constrained nonnegative.
 - **Payload / key:** UTF-8 JSON preserves nine source fields plus deterministic configured integer `discount_percent`; IDs are JSON integers, price a finite JSON number, optional empty category_code/brand/user_session become null. Key is UTF-8 `str(user_id)`, not event identity. No business `event_id` is invented.
 - **Time / injection:** payload `event_time` retains original UTC text. Kafka record timestamp is not set to 2019; producer uses client default send timestamp (broker readback unverified). Late events keep original payload and release when source progress reaches `event_time + delay`; configured 5–10 minutes are event-time displacement, not real waiting. End-of-input releases pending events as `end_flush`, separately from full-delay `due`. Rate is submissions per real second including duplicates; duplicate is one extra same key/value with a distinct copy header. Burst is disabled/outside implemented scope.
-- **Provenance / recovery:** headers carry replay_run, source_record, copy, release, delay_seconds and progress. Source record provenance is not a downstream business dedup rule. Checkpoint stores source position and pending late entries only after emitted messages ACK; source path/size/mtime, settings and Kafka cluster/topic ID/partition set must match on resume. At-least-once after process crash, not exactly-once; resume reparses/skips the prefix. Native restart semantics still require runtime verification.
+- **Provenance / recovery:** headers carry replay_run, source_record, copy, release, delay_seconds and progress. Source record provenance is not a downstream business dedup rule. Checkpoint stores source position and pending late entries only after emitted messages ACK; source path/size/mtime, settings and Kafka cluster/topic ID/partition set must match on resume. At-least-once after process crash, not exactly-once; resume reparses/skips the prefix. Native bounded interrupt/resume đã có readback; không chứng minh absence of uncheckpointed duplicates.
 - **Bounded verification:** `acks.jsonl` stores expected key/value/headers and ACK partition/offset up to configured cap; counters continue beyond the cap, readback scope becomes `sample_only`. Verifier compares journal targets and due thresholds, not an independent reconstruction of all source fault choices or Flink watermark behavior. Crash may leave additional uncheckpointed Kafka messages outside the recovered journal; readback does not prove absence of those duplicates.
 
 ## LEGACY dataset declarations — old-vibe-backup
@@ -223,7 +223,7 @@ Future production examples link by `prediction_id` and retain exact logged featu
 | Concern | CURRENT rebuild-clean | TARGET contract | Status / LEGACY comparison |
 | --- | --- | --- | --- |
 | Batch source | October CSV; parsed UTC classification then deterministic per-schema sampling; shared classifier in benchmark | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([Batch Generator](docs/batch_generator.md)); [small MinIO readback PASS](docs/batch_generator_minio.md); full output/≥100 GB/November stream NOT YET VERIFIED |
-| Kafka Stream Replay | Kafka 4.1.2 Compose, November Replay Producer and bounded verifier | Bounded replay with actual ack and consumer readback | STATIC/UNIT VERIFIED; native November replay/restart/persistence NOT VERIFIED |
+| Kafka Stream Replay | Kafka 4.1.2 Compose, November Replay Producer and bounded verifier | Bounded replay with actual ack and consumer readback | BOUNDED ACK/READBACK + PRODUCER RESUME VERIFIED; full scale/recreate/exactly-once unverified |
 | Event identity/dedup | Raw batch has no stable event_id; no downstream dedup implementation | Explicit source/event identity or documented conservative dedup rule | NOT IMPLEMENTED; LEGACY composite dedup is reference only |
 | Durable event history | Raw CSV objects in MinIO; no Bronze/Silver or stream archive implementation | Preserve accepted source events independently of lossy features | SMALL RAW READBACK PASS; downstream NOT IMPLEMENTED |
 | 15m feature semantics | No Spark/Flink feature implementation | Four identical per-user windows with same event-time, boundary and late availability semantics | NOT IMPLEMENTED; LEGACY 30d/hopping-window mismatch |
@@ -246,8 +246,8 @@ flowchart LR
   BG --> RAW["MinIO raw batch — small readback PASS"]
   BG --> LOCAL["Local CSV + manifest"]
   RAW -. "TARGET; not implemented" .-> BR["Spark Bronze"]
-  NOV["November CSV"] -->|"source only; runtime unverified"| RP["Replay Producer"]
-  RP -->|"source only; runtime unverified"| K["Kafka: broker/API learner outputs; replay unverified"]
+  NOV["November CSV"] -->|"bounded runtime verified; see evidence"| RP["Replay Producer"]
+  RP -->|"bounded runtime verified; see evidence"| K["Kafka: broker/API learner outputs; bounded replay verified"]
   COMPOSE["compose.yaml"] -->|"static service declaration only"| K
 ```
 
@@ -275,7 +275,7 @@ In LEGACY source, the stream's raw-event staging branch declares preservation of
 
 ## Known contract gaps to resolve in implementation milestones
 
-1. Batch Generator small MinIO readback PASS; full-output/≥100 GB remain unverified. November Replay Producer/readback and Kafka Compose are present; CLI November runtime, persistence and restart NOT VERIFIED. See [MinIO evidence](docs/batch_generator_minio.md).
+1. Batch Generator small MinIO readback PASS; full-output/≥100 GB remain unverified. November Replay Producer/readback and Kafka Compose are present; bounded CLI replay/resume/readback đã verify; full scale/recreate/exactly-once unverified. See [Kafka evidence](docs/kafka_stream_replay.md). See [MinIO evidence](docs/batch_generator_minio.md).
 2. Choose a stable event identity/dedup policy; LEGACY composite dedup can merge distinct events and LEGACY fact hash omits event type; no downstream dedup implementation exists on rebuild-clean.
 3. Align Spark historical and Flink realtime 15m feature definitions, timestamp field, watermark/late-data availability policy, and output keys.
 4. Sample cadence/eligibility and replay clock remain OPEN; event time alone cannot reconstruct historical arrival/availability. Future prediction triggering and feature-time alignment are outside current DE scope and unresolved.

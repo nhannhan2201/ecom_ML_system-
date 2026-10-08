@@ -1,0 +1,136 @@
+{
+  "recorded_date_local": "2026-10-08",
+  "timezone": "Asia/Ho_Chi_Minh",
+  "provenance": "Native commands executed by learner; terminal outputs supplied in chat. Agent inspected local artifacts only; no Kafka rerun. Exact command start/end wall times unavailable.",
+  "scope": "Two bounded runs, not full topic inventory, benchmark, or exactly-once proof.",
+  "runs": [
+    {
+      "artifact_dir": "artifacts/kafka-november-2000",
+      "producer_summary": {
+        "status": "ACK_PASS",
+        "run_id": "6f06e063-344a-4dfc-b1cd-6356f47b0d41",
+        "identity": {
+          "cluster_id": "MkU3OEVBNTcwNTJENDM2Qk",
+          "topic": "ecommerce_stream_events",
+          "topic_id": "mRFFhxORQG6/jRzRiLFBdw",
+          "partitions": [
+            0,
+            1
+          ]
+        },
+        "counters": {
+          "accepted": 2000,
+          "submitted": 2031,
+          "acked": 2031,
+          "audit_records": 2031,
+          "duplicate_messages": 31,
+          "late_selected_events": 99,
+          "late_due_events": 51,
+          "late_end_flush_events": 48
+        },
+        "elapsed_this_process_seconds": 20.65560766699491,
+        "elapsed_checkpointed_seconds": 20.65184627097915,
+        "acked_per_second": 98.34471811142849,
+        "audit_scope": "all",
+        "verification": "NOT_RUN",
+        "restart_semantics": "at-least-once"
+      },
+      "learner_readback": {
+        "status": "READBACK_PASS",
+        "verified_messages": 2031,
+        "scope": "all",
+        "late_due_events": 51,
+        "late_end_flush_events": 48,
+        "note": "end_flush is not evidence of full configured late delay; restart can add uncheckpointed duplicates"
+      },
+      "checkpoint": {
+        "complete": true,
+        "last_record": 2000,
+        "pending_count": 0
+      },
+      "local_journal_inspection": {
+        "records": 2000,
+        "ack_positions": 2031,
+        "injected_duplicate_copies": 31,
+        "event_release_counts": {
+          "normal": 1901,
+          "due": 51,
+          "end_flush": 48
+        },
+        "due_displacement_seconds_min": 301.0,
+        "due_displacement_seconds_max": 571.0,
+        "key_value_copy_pairs_match": true
+      },
+      "artifact_sha256": {
+        "summary.json": "740afd9ae1118b7e1266bb2523fda1aaf67ef8bdf2ecd6f68fd961929820523b",
+        "readback.json": "9437d8a433c255b8908a4e47e3910f57050c19f5d2db1e22286c797b909df980",
+        "checkpoint.json": "8d5246a37fcc3b12cf8869fdcabca5e9d7e7135f474425cc5e73945d17feb90b",
+        "acks.jsonl": "b3f4e2d7f01f4d553eb3afec4f10c1c2258b6ccca3f87eefc1c02d4ce0b6c7b1"
+      }
+    },
+    {
+      "artifact_dir": "artifacts/kafka-november-restart",
+      "producer_summary": {
+        "status": "ACK_PASS",
+        "run_id": "1d438611-ceac-4add-b1da-05d409149542",
+        "identity": {
+          "cluster_id": "MkU3OEVBNTcwNTJENDM2Qk",
+          "topic": "ecommerce_stream_events",
+          "topic_id": "mRFFhxORQG6/jRzRiLFBdw",
+          "partitions": [
+            0,
+            1
+          ]
+        },
+        "counters": {
+          "accepted": 3000,
+          "submitted": 3041,
+          "acked": 3041,
+          "audit_records": 3041,
+          "duplicate_messages": 41,
+          "late_selected_events": 150,
+          "late_due_events": 91,
+          "late_end_flush_events": 59
+        },
+        "elapsed_this_process_seconds": 51.63189753799816,
+        "elapsed_checkpointed_seconds": 61.354151495033875,
+        "acked_per_second": 49.564698164657116,
+        "audit_scope": "all",
+        "verification": "NOT_RUN",
+        "restart_semantics": "at-least-once"
+      },
+      "learner_readback": {
+        "status": "READBACK_PASS",
+        "verified_messages": 3041,
+        "scope": "all",
+        "late_due_events": 91,
+        "late_end_flush_events": 59,
+        "note": "end_flush is not evidence of full configured late delay; restart can add uncheckpointed duplicates"
+      },
+      "checkpoint": {
+        "complete": true,
+        "last_record": 3000,
+        "pending_count": 0
+      },
+      "local_journal_inspection": {
+        "records": 3000,
+        "ack_positions": 3041,
+        "injected_duplicate_copies": 41,
+        "event_release_counts": {
+          "normal": 2850,
+          "due": 91,
+          "end_flush": 59
+        },
+        "due_displacement_seconds_min": 301.0,
+        "due_displacement_seconds_max": 587.0,
+        "key_value_copy_pairs_match": true
+      },
+      "artifact_sha256": {
+        "summary.json": "7776c430ba486caa36c2dda8e51f87ca32c8ed0b4e196bc986a4cd1eb1e9484a",
+        "readback.json": "e61f04dafcaa57a9b19c95cc3546beca862a2280c8d5e7bdf5932d621f0c24dc",
+        "checkpoint.json": "553e2eeb0b29dba069fadc2dfe5f6bff267d45e8b08ca68788f9ad3ab4995710",
+        "acks.jsonl": "021eb9529b66f825342d5603783cbaafe64335274a6462feb6826f5332f97064"
+      }
+    }
+  ]
+}

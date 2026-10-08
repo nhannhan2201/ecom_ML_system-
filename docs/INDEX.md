@@ -8,7 +8,8 @@ Giữ [ghi chú Batch Generator batch selection và lịch sử small local read
 |---|---|---|
 | Generator | [Batch Generator batch selection](batch_generator.md) | Batch Generator unit suite retained; historical runtime artifacts removed; fresh small MinIO readback PASS, ≥100 GB unverified |
 | MinIO Raw Storage | [Batch Generator → MinIO evidence](batch_generator_minio.md) | Healthy; bucket/objects/schema/counts/bytes/CSV SHA-256 PASS (2026-10-06); persistence after recreate unverified |
-| Kafka / Flink | TBD — add after stream milestone | Not verified |
+| Kafka Stream Replay | [Bounded replay/recovery evidence](kafka_stream_replay.md) | Native 2.031/3.041 message readback PASS; bounded producer resume verified; scale/exactly-once unverified |
+| Flink | TBD — implementation proposal requires learner approval | Not implemented / not verified |
 | Spark / Lakehouse / DWH | TBD — add after batch processing milestone | Not verified |
 | Airflow | TBD — add after DAG runtime milestone | Not verified |
 | Feast / Redis | TBD — add after feature-store milestone | Not verified |
