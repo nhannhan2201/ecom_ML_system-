@@ -4,6 +4,10 @@
 
 Bản đồ source/config cập nhật 2026-10-08 sau bounded Replay Producer runtime/readback và recovery verification; broker/API checks trước đó là learner terminal outputs; Batch Generator full October readback đã PASS ngày 2026-10-08 ([evidence](docs/evidence/batch_generator_october.json)). Full October Spark Raw → Bronze Delta Schema Evolution đã [runtime/readback PASS](docs/evidence/spark_raw_to_bronze_evolution_full.json), v0/13 → v1/14; [smoke](docs/evidence/spark_raw_to_bronze_evolution_smoke.json) cũng PASS. Evidence/output single-write cũ đã dọn theo yêu cầu; lịch sử nằm bên dưới. Chỉ mô tả file đang tồn tại; source inspection và unit test không chứng minh pipeline runtime. Thiết kế ở [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); schema/ý nghĩa dữ liệu ở [DATA_CONTRACT.md](DATA_CONTRACT.md); tiến độ ở [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md).
 
+## Architecture handoff — 2026-10-10
+
+Markdown-only update: [target](TARGET_ARCHITECTURE.md) bỏ feature topic/consumer riêng, ưu tiên Flink → offline history + Feast-compatible Redis write. Source/config và runtime evidence không đổi. Silver/Gold/features/labels, timeline 1×, Feast/Flink/Kubeflow/MLflow/KServe/FastAPI downstream **chưa implement trên rebuild-clean**; legacy paths không phải implementation. Exact Feast 0.38.0 source audit nằm trong [contract](DATA_CONTRACT.md#feast-0380--source-audit-và-write-invariants); chưa có integration runtime. [Session tiếp theo](docs/SESSION_HANDOFF.md).
+
 ## Source còn lại
 
 | File | Vai trò | Giới hạn kiểm chứng |

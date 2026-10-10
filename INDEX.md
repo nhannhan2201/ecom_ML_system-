@@ -1,5 +1,7 @@
 # Project documentation map
 
+Session mới bắt đầu bằng [SESSION_HANDOFF.md](docs/SESSION_HANDOFF.md), sau đó đọc canonical docs dưới đây; handoff chỉ là tóm tắt.
+
 Read these files in order when you need the complete project picture:
 
 1. [README.md](README.md) — project entry point and safety notes.

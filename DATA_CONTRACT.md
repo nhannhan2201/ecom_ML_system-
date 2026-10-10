@@ -10,33 +10,69 @@ Related documents: [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md) describes th
 
 - **CURRENT rebuild-clean:** Batch Generator, its YAML/config/tests and Compose declarations for MinIO plus Kafka. Small and full October source Batch Generator → MinIO declared-checks readback PASS; Replay Producer/readback source và unit tests đã có; bounded November replay/resume/readback verified ([evidence](docs/kafka_stream_replay.md)); full scale/recreate unverified; Spark Raw → Bronze full readback PASS, later downstream not implemented. Broker/API learner outputs được phân loại riêng trong CURRENT_IMPLEMENTATION.md. Retained dependency/config declarations do not prove a service or consumer exists.
 - **LEGACY old-vibe-backup:** historical Spark/Flink/Feast/Airflow/DWH/governance/stream source, recorded at snapshot `2cf00cf`. Paths, schemas and mismatches marked LEGACY below are reference only; reuse requires validation against TARGET.
-- **TARGET:** learner-approved DE flow ends at a Feature–Label Dataset; implementation gaps remain. See [target flow and OPEN decisions](TARGET_ARCHITECTURE.md).
+- **TARGET:** October Medallion → training dataset → Kubeflow/MLflow/KServe; November timeline 1× → Flink direct offline/Feast-compatible online writes → on-demand inference. No stream labels or feature topic/consumer in baseline. See [architecture](TARGET_ARCHITECTURE.md).
 
 ## Problem and canonical target
 
-For each selected `(user_id,t)` sample, create four features over `[t-15m,t)` and a label indicating purchase in `[t,t+1h)`. Here `t=feature_timestamp`; cadence/eligibility remains OPEN, not necessarily every minute. The DE output is a Feature–Label Dataset, not a trained model.
+Bốn feature tại snapshot UTC mỗi **1 phút**, `t=feature_as_of`: lookback `[t-15m,t)`, purchase label `[t,t+1h)`. Entity `user_id`; feature/October label grain `(user_id,feature_as_of)`. `feature_timestamp` trong target cũ là alias lịch sử, không tạo thêm timestamp độc lập. Physical adapter mapping tới Feast/rubric `event_timestamp` phải được test; lịch sử/evidence không đổi tên.
 
-| Canonical feature | Type | Meaning |
+| Feature | Type | Meaning |
 | --- | --- | --- |
-| `views_15m` | int64 | Count of `view` events for the user in the half-open 15-minute window |
-| `carts_15m` | int64 | Count of `cart` events in that window |
-| `purchases_15m` | int64 | Count of `purchase` events in that window |
-| `total_spend_15m` | float64 | Sum of `price` for `purchase` events in that window |
+| `views_15m` | INT64 | Count view |
+| `carts_15m` | INT64 | Count cart |
+| `purchases_15m` | INT64 | Count purchase |
+| `total_spend_15m` | FLOAT64 | Sum price của purchase |
 
-Feature and historical label grain is `(user_id, feature_timestamp)` in both October and November. Label computation uses sample identity/time and clean purchase events, not the four feature values. A label stays PENDING until the one-hour horizon and coverage/completeness policy permit finalization; then it is 1 if a qualifying purchase exists, otherwise 0.
+Counts/spend dùng event hợp lệ sau cleaning. Model baseline không dùng year, absolute timestamp hoặc synthetic discount. Gold event fact là nguồn historical features/labels. Chọn user có event trong lookback, không dùng tương lai để chọn active user. Chỉ tạo batch label khi đủ lookback/horizon; thiếu coverage bị loại khỏi dataset, không mặc định 0. Stream không tạo label.
 
-Feature records contain `user_id`, the four features, `feature_timestamp` and `created_timestamp`. Creation time is operational metadata, not a feature or proof of online availability. Event time, arrival/ingestion time, feature window end, creation time and future prediction time are distinct. Mapping LEGACY `event_timestamp`/`created` (also rubric temporal names) to target fields requires explicit verification.
+### Cleaning baseline — target, chưa implement
+
+Normalize UTC event_time; IDs INT64; price finite/nonnegative; event_type thuộc view/cart/purchase; optional empty strings → null, literal `"null"` không tự đổi; discount INT nullable, OLD thiếu giữ null. Invalid rows vào rejected output có reason. Native Spark `dropDuplicates` dùng 10 cột nghiệp vụ chuẩn hóa: `event_time,event_type,product_id,category_id,category_code,brand,price,user_id,user_session,discount_percent`. Exclude operational metadata/source_event_time. Flink dùng cùng equality rule.
+
+Chấp nhận gộp hành vi thật nếu trùng toàn key; khác session/price/discount vẫn giữ. Không thêm source_event_id/copy_index hoặc phục hồi provenance. Counts/spend có thể giảm; gộp purchase giống nhau không đổi existence label, nhưng rejected rows có thể ảnh hưởng completeness. Không claim số duplicate removed chỉ bằng số injection. Bronze/evidence hiện có vẫn giữ mọi multiplicity.
+
+### Time và inference semantics
+
+- `source_event_time`: November source timestamp 2019; `event_time`: timestamp ánh xạ cho demo 1×. `mapped_event_time = demo_start + (source_event_time - source_start)`; giữ anchors qua resume. Không gán now() từng row, không che backlog bằng timestamp mới. Rate chỉ là cap; testing tăng tốc ngoài baseline.
+- `ingestion_time`: thời điểm thực sự nhận event tại boundary được ghi rõ; không suy ra từ event_time hoặc ACK. Bronze `_ingested_at` hiện tại là batch processing timestamp, không phải arrival 2019.
+- `feature_as_of`: HOP window_end, exclusive end; `created_timestamp`: snapshot creation; actual availability chỉ được xác nhận khi sink write/readback thành công. Creation không chứng minh cả hai store đã commit.
+- `prediction_time`: API request/inference time riêng. Horizon trả về `[feature_as_of,feature_as_of+1h)`, không đổi thành request-time horizon.
+- Snapshot immutable theo `(user_id,feature_as_of)`: retry cùng key phải cùng values; conflict phải fail/quarantine, không silently revise. Không thay snapshot từng dùng cho prediction khi backfill/late tới.
+- API `GET /predict/{user_id}` lấy Feast values và kiểm tra eligibility: READY = demo profile, đủ 15 phút warm-up, complete vector, không future, age ≤90 giây và activity >0; NO_RECENT_ACTIVITY = snapshot hợp lệ/activity=0; FEATURE_NOT_READY = missing/stale/future/warm-up hoặc rubric profile. Unknown user là NOT_READY. Hai trạng thái sau không gọi model. HOP không emit window user rỗng; thiếu row không chứng minh inactivity.
+- Response chứa user_id, probability khi READY, feature_as_of, prediction_time, horizon start/end, model_version và freshness/status. Freshness ≠ completeness; October event_time không tái dựng arrival history. Profile/window late policy thuộc [architecture](TARGET_ARCHITECTURE.md#online-on-demand-inference).
+
+### Feast 0.38.0 — source audit và write invariants
+
+**Static source inspection 2026-10-10**, đọc đúng tag `v0.38.0`, không dùng package host 0.66.0 làm bằng chứng cho requirements và không chạy Redis/Flink:
+
+| Source chính thức | Kết quả và giới hạn |
+| --- | --- |
+| [feature_store.py](https://github.com/feast-dev/feast/blob/v0.38.0/sdk/python/feast/feature_store.py) `push` / `write_to_online_store` | Có SDK write qua registered view/PushSource. `PushMode.BOTH` gọi online rồi offline tuần tự, không atomic |
+| [redis.py](https://github.com/feast-dev/feast/blob/v0.38.0/sdk/python/feast/infra/online_stores/redis.py) `online_write_batch` | Đọc stored timestamp rồi HSET, skip older/equal tại precision giây. Không atomic compare-and-set; nhiều writer có race. Cùng entity nhiều lần trong batch đều so với giá trị trước batch |
+| [file.py](https://github.com/feast-dev/feast/blob/v0.38.0/sdk/python/feast/infra/offline_stores/file.py) `offline_write_batch` | Có offline write, kiểm schema, đọc Parquet cũ/concat/ghi lại. Không idempotent append hoặc checkpoint commit protocol; không chọn làm stream history sink chỉ vì API tồn tại |
+
+Ưu tiên Flink native history sink vào shared MinIO offline store và SDK-compatible online sink trong cùng job, không feature topic/consumer. API support đã xác nhận bằng source; binding với PyFlink, offline format/Feast retrieval, sink recovery và runtime correctness **OPEN**.
+
+Acceptance invariants của hai sink:
+
+1. Offline retry không nhân snapshot; readback logical key/values/counts sau failure/restart. Native checkpoint commit phải được xác minh cho connector/version/storage chọn.
+2. Online mỗi entity một ordered writer, mỗi batch tối đa một snapshot/entity; old/equal retry không overwrite newer. Single writer/failover fencing phải được chứng minh, không chỉ dựa Kafka key hoặc Redis SDK timestamp check.
+3. SDK exception/timeout không được swallow. Test timeout sau write, replay trước/sau checkpoint, failure mỗi store riêng. Checkpoint của Flink không tự rollback external SDK side effect; không claim exactly-once dual-write.
+4. Partial failure không phải toàn-success: offline success/online fail → history có thể tồn tại nhưng serving pending/stale; online success/offline fail → online có thể thấy row chưa archived. Recovery phải reconcile cùng snapshot, chặn phục vụ snapshot chưa được xác nhận durable theo policy. Cách gate/commit notification còn OPEN; nếu cần protocol phức tạp, báo blocker.
+5. Materialization và Flink không cạnh tranh cùng live destination. Baseline dừng/drain writer trước handover; không retimestamp October. Test materialize older after newer bằng controlled sequential run và readback, không giả định atomic stale-write protection.
+
+Alternative nếu gate fail: offline commit trước → existing incremental materialization → online, chỉ sau learner approval; đánh giá latency. Không tự thêm topic/service/custom Redis keys. [Phase 9 tests và acceptance](IMPLEMENTATION_ROADMAP.md#phase-9--flink-features-và-direct-writes).
 
 ## Data principles
 
 1. `event_time` is when an action happened; it does not say when the system received it. Record ingestion/availability separately when needed.
 2. All canonical times are UTC. LEGACY SQL/Parquet fields are often timestamp-without-time-zone and depend on code conventions; a readback must verify serialization and timezone handling.
 3. All windows use `[start, end)` to avoid counting a boundary event twice.
-4. Event facts are lossless relative to the accepted source event fields; feature aggregates are intentionally lossy and cannot replace event history.
+4. Bronze preserves source values/multiplicities; Silver/Gold represent accepted events after declared cleaning. Feature aggregates cannot replace event history.
 5. Every deduplication key is a business rule, not a universal event identity. Current source has no stable source `event_id`.
 6. Batch historical feature generation and Flink online feature generation must implement the same four-feature definitions and timestamp boundary semantics.
 7. Offline history retains time-indexed feature rows; online serving exposes the latest valid feature row per entity. Feast defines retrieval/materialization and online access; it does not compute the canonical features.
-8. Dataset rows join finalized labels to the matching `(user_id,feature_timestamp)` snapshot/revision. Future production predictions must preserve exact inputs; that separate production linkage does not define historical label identity.
+8. Dataset rows join finalized labels to the matching `(user_id,feature_as_of)` snapshot. Future production predictions must preserve exact inputs; that separate production linkage does not define historical label identity.
 
 ## Timestamp dictionary
 
@@ -45,11 +81,11 @@ Feature records contain `user_id`, the four features, `feature_timestamp` and `c
 | `event_timestamp` | Event occurrence time in normalized UTC form | CURRENT: raw CSV retains `event_time`; normalized field not implemented. LEGACY: Silver `event_timestamp`, derived from raw `event_time`; Gold fact also carries it. In the Flink feature topic the same name in LEGACY means window end. Context is required. |
 | `ingestion_timestamp` | Time accepted by the first durable system | CURRENT: no separate CSV ingestion timestamp. LEGACY: Spark Bronze `ingestion_time`; DWH Bronze defaults `ingestion_time`. Kafka event payload does not carry a distinct arrival time. |
 | `processed_timestamp` | Time a processing stage handled a record | No canonical persisted field found. Add only if a component needs it and its clock/meaning is defined. |
-| `feature_timestamp` | As-of time / exclusive end of the feature window and point-in-time lookup key | CURRENT: no feature implementation. Target canonical field. LEGACY Spark 30d view uses `event_timestamp` at target-date midnight; Flink sets `event_timestamp` to HOP window end. |
+| `feature_as_of` (old target alias `feature_timestamp`) | As-of time / exclusive end of the feature window and point-in-time lookup key | CURRENT: no feature implementation. Target canonical field `feature_as_of`. LEGACY Spark 30d view uses `event_timestamp` at target-date midnight; Flink sets `event_timestamp` to HOP window end. |
 | `created_timestamp` | Time the feature record was created; not necessarily its online availability time | CURRENT: no feature implementation. Target name. LEGACY Spark/Feast uses `created`; Flink sink declares `created` from processing-time `CURRENT_TIMESTAMP`. LEGACY runtime meaning/UTC handling unverified. |
 | `prediction_timestamp` | Decision time of a real model inference | CURRENT: no label job. LEGACY label job creates minute timestamps from Silver activity; there is no identified prediction service/log, so this is not evidence an inference happened. |
-| `label_window_start` | Inclusive beginning of the one-hour outcome interval | Historical target: `feature_timestamp`; future production outcome: `prediction_timestamp`. Not stored as a separate LEGACY label column. |
-| `label_window_end` | Exclusive end of the outcome interval | Historical target: `feature_timestamp + 1 hour`; future production outcome: `prediction_timestamp + 1 hour`. Not stored as a separate LEGACY label column. |
+| `label_window_start` | Inclusive beginning of the one-hour outcome interval | Baseline: `feature_as_of`; future production labeling deferred. Not stored as a separate LEGACY label column. |
+| `label_window_end` | Exclusive end of the outcome interval | Baseline: `feature_as_of + 1 hour`; future production labeling deferred. Not stored as a separate LEGACY label column. |
 | `label_matured_timestamp` | Time the horizon/completeness rule permits final label assignment | Target only; not implemented. |
 | `valid_from_timestamp` | Inclusive start of a dimension version | CURRENT: no dimension implementation. LEGACY `dim_product.valid_from_ts`; target terminology mapping. |
 | `valid_to_timestamp` | Exclusive end of a dimension version; null denotes open/current | CURRENT: no dimension implementation. LEGACY `dim_product.valid_to_ts`; temporal join uses `< valid_to_ts` or null. |
@@ -171,24 +207,28 @@ Sections explicitly marked LEGACY describe producer/consumer implementation file
 - **Feature columns:** `user_id BIGINT`, `f_views_15m BIGINT`, `f_carts_15m BIGINT`, `f_purchases_15m BIGINT`, `total_spend_15m DOUBLE`, `event_timestamp TIMESTAMP(3)` (HOP_END), `created TIMESTAMP(3)` (processing time expression).
 - **Key/time:** window row grain `(user_id, window_end)`; Kafka feature sink declares no key. Watermark is event time minus 15 minutes. Source dedup key is `(user_id,event_time,product_id,event_type)`. Window output and late correction behavior have not been run/read back. Legacy stream feature is not wired to a prediction service in inspected code.
 
-### Target canonical offline/online feature history — TARGET, not implemented end-to-end
+### Target canonical offline/online feature history — not implemented
 
-- **Purpose / grain:** one complete feature snapshot per user and feature timestamp, shared semantically between Spark history and Flink stream computation.
-- **Producers:** Spark historical computation from canonical event history; Flink feature computation from accepted stream events. Both must share definitions, UTC handling, `[t-15m,t)` boundaries, dedup policy, and late-data availability semantics.
-- **Consumers:** Feast offline retrieval/training joins; Feast online retrieval for inference; Airflow incremental materialization moves eligible offline history to online. Realtime writes must support offline and online stores as required by rubric; exact deployable job mapping is OPEN.
-- **Physical location:** offline `feat_user_15m` history on MinIO; Delta/Parquet access mapping and Feast compatibility remain OPEN; online latest state via Feast-managed Redis. Exact online key encoding belongs to Feast and is not a project contract.
-- **Canonical schema/grain:** `user_id INT64 NOT NULL`, `views_15m INT64 NOT NULL`, `carts_15m INT64 NOT NULL`, `purchases_15m INT64 NOT NULL`, `total_spend_15m FLOAT64 NOT NULL`, `feature_timestamp TIMESTAMP_UTC NOT NULL`; logical key `(user_id, feature_timestamp)`; `created_timestamp TIMESTAMP_UTC` records creation time, not guaranteed online availability. Revision/correction policy remains OPEN; logical grain does not settle revision storage.
-- **Status:** target contract only; no feature-producing Spark/Flink/Feast implementation on rebuild-clean. LEGACY Feast stream view uses 15m names but maps timestamps as `event_timestamp`/`created`; batch view remains 30d. LEGACY FeatureService includes both views. No online/offline readback confirms parity or freshness.
+**Một logical Offline Feature Store chung trên MinIO** cho Spark October và Flink November; có thể dùng bảng/partition riêng, không tạo streaming offline store thứ hai. Cùng feature contract và Feast Feature Registry; source bindings tái dùng definitions, không copy hai bộ feature definitions.
 
-### Historical label history and Feature–Label Dataset — TARGET, not implemented
+`feat_user_15m`: user_id INT64, four features as above, feature_as_of TIMESTAMP_UTC, created_timestamp TIMESTAMP_UTC. Grain `(user_id,feature_as_of)` **trong một dataset/source + replay run đã chọn**; logical history key trên toàn shared store gồm scope này để tránh va chạm giữa các replay. Scope là metadata để chọn dữ liệu, không thêm feature/model input hoặc entity ID mới.
 
-- **Label history:** `labels_purchase_1h` on MinIO; grain/key `(user_id,feature_timestamp)`, with `t=feature_timestamp`. Logical fields: `user_id`, `feature_timestamp`, `label` (unresolved while pending, otherwise 0/1), `window_start=t`, `window_end=t+1h`, and maturity/finalized status. Physical status column names/enums, paths, retention/versioning and correction policy remain OPEN.
-- **October producer:** Historical Label Job reads selected historical `(user_id,t)` samples plus clean October Silver purchase events.
-- **November producer:** Delayed Label Job reads durably stored identities of selected realtime snapshots plus clean persisted November Silver purchase events. It waits for horizon and completeness; Flink need not wait an hour or generate labels. Spark/Python job technology and deployable mapping remain OPEN.
-- **Rule:** any qualifying purchase in `[t,t+1h)` gives 1, otherwise 0 only when coverage/completeness permits finalization. Missing coverage is PENDING, not an assumed negative. Jobs may share logic.
-- **Dataset Builder:** historical feature retrieval through Feast plus label history; join `(user_id,feature_timestamp)` and select the matching snapshot/revision. Spark/Python choice remains OPEN.
-- **Dataset output:** `user_id`, `feature_timestamp`, `views_15m`, `carts_15m`, `purchases_15m`, `total_spend_15m`, `label`, with reproducibility/version/provenance metadata. MinIO storage; physical layout/versioning OPEN. Only finalized labels and adequate coverage are eligible. Training/model/prediction are downstream and outside current DE flow.
-- **Coverage warning:** sampled events and timestamp-shifted benchmark replicas are not automatically a complete source for either window; the full feature/label source remains OPEN.
+| Time / scope | Contract target |
+| --- | --- |
+| `source_event_time` | Original event timestamp 2019 trên behavior records; không gán một event timestamp giả cho snapshot aggregate. Source-window bounds suy ra từ feature_as_of và fixed replay anchors |
+| `feature_as_of` | Snapshot boundary/PIT time: October giữ timeline 2019; November dùng timeline ánh xạ hiện tại; không thay bằng creation/request time |
+| dataset/source | Phân biệt October historical và November replay histories bằng metadata/table/partition binding rõ ràng |
+| replay run ID | Scope của November replay, ổn định qua resume; October không phải replay (không tạo fake run). Persist cùng history hoặc partition/run manifest, kèm source/demo anchors và profile; không suy ra run từ wall-clock |
+
+Tên physical columns/partitions và sink format/Feast 0.38.0 source binding còn OPEN. Historical retrieval phải **chọn source/run trước PIT lookup** theo feature_as_of, không chỉ join user_id rồi trộn October/November hoặc nhiều runs. Có thể dùng bindings riêng trong cùng registry/store nếu cần, nhưng definitions chung; khả năng filter/binding chưa runtime-verified. Tests phải có cùng user ở October và ≥2 replay runs, boundary times và resume để chứng minh isolation và đúng snapshot.
+
+Redis chỉ qua Feast-compatible writer; online serving chọn một demo run/profile, không concurrent materialization vào live view. Incremental materialization chọn source/run/time range rõ, stop/drain handover; controlled older-after-newer test không làm online rollback. Values/freshness/recovery theo canonical invariants phía trên. Chưa có Feast/Flink runtime readback.
+
+### Historical labels và training dataset — target, not implemented
+
+October `labels_purchase_1h`: `(user_id,feature_as_of,label)` with coverage-valid `[t,t+1h)` only; Spark reads Gold purchase events. Feast retrieves matching snapshots for the sample times; join labels by the same key and assert exact snapshot identity. No baseline November label job.
+
+Dataset: user_id, feature_as_of, four feature values, label; benchmark event samples/replicas excluded. Time split target October 01–20 train, 21–25 validation, 26–31 test; exclude samples whose label horizon crosses split/source boundary and incomplete initial lookback. Past lookback before a split is allowed. Kubeflow executes load/split/train/evaluate; MLflow versions data/model; KServe model-inside-image. Model/time split evidence not yet present.
 
 ### Legacy Feast configuration and online values — LEGACY old-vibe-backup
 
@@ -209,29 +249,22 @@ Sections explicitly marked LEGACY describe producer/consumer implementation file
 - **Columns:** `user_id BIGINT`, `prediction_timestamp TIMESTAMP`, `target_purchase_1h INT`, `date DATE`.
 - **Legacy logic:** right-censors candidate times later than max event time minus one hour; label is 1 if a purchase exists in `[prediction_timestamp,prediction_timestamp+1h)`, otherwise 0. It does not persist prediction id, exact feature snapshot, explicit window boundaries, pending state, or maturation time. Completeness under late arrivals is not proven.
 
-**Future production `prediction_log` and `prediction_labels` — outside current DE scope, not implemented**
-
-| Dataset | Grain and columns | Producer | Consumer / storage |
-| --- | --- | --- | --- |
-| `prediction_log` | one row per `prediction_id`; `prediction_id STRING`, `user_id INT64`, `prediction_timestamp TIMESTAMP_UTC`, four canonical feature values, `feature_timestamp TIMESTAMP_UTC`, `score FLOAT64`, `model_version STRING` | Future prediction service reading Feast online values | Audit/debug and label join; durable Gold table/object storage. |
-| `prediction_labels` | one row per `prediction_id`; `prediction_id STRING`, `label_window_start TIMESTAMP_UTC`, `label_window_end TIMESTAMP_UTC`, `target_purchase_1h INT8 nullable while pending`, `label_status STRING`, `label_matured_timestamp TIMESTAMP_UTC nullable` | Future delayed-label job joining actual persisted predictions to canonical purchase events | Training dataset builder; durable Gold table/object storage. |
-
-Future production examples link by `prediction_id` and retain exact logged features with completed outcomes. Historical DE datasets instead join `(user_id,feature_timestamp)`; these records do not define their label identity. The feature-time versus prediction-time relation remains OPEN. A date-only event dataset cannot prove what an actual serving system knew at prediction time.
+**Future production prediction logging/delayed labels — deferred, not implemented.** Không yêu cầu prediction ID hoặc stream label tables trong baseline. Inference dùng `feature_as_of` làm horizon anchor; `prediction_time` chỉ thời điểm API thực thi. Historical training join `(user_id,feature_as_of)`; xem canonical label contract phía trên.
 
 ## Current versus target matrix
 
 | Concern | CURRENT rebuild-clean | TARGET contract | Status / LEGACY comparison |
 | --- | --- | --- | --- |
 | Batch source | October CSV; complete-source mode preserves records + injects copies; benchmark modes sample/replicate | Full October batch `[Oct 01,Nov 01)`; V2 begins Oct 16; November is stream source | UNIT-VERIFIED + SMALL-RUNTIME-VERIFIED locally ([Batch Generator](docs/batch_generator.md)); [small MinIO readback PASS](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06); full October source declared checks PASS; ≥100 GB/full November stream NOT YET VERIFIED |
-| Kafka Stream Replay | Kafka 4.1.2 Compose, November Replay Producer and bounded verifier | Bounded replay with actual ack and consumer readback | BOUNDED ACK/READBACK + PRODUCER RESUME VERIFIED; full scale/recreate/exactly-once unverified |
-| Event identity/dedup | Raw batch has no stable event_id; no downstream dedup implementation | Explicit source/event identity or documented conservative dedup rule | NOT IMPLEMENTED; LEGACY composite dedup is reference only |
+| Kafka Stream Replay | Kafka 4.1.2 Compose, November Replay Producer and bounded verifier | Timeline 1× với fixed anchors, bounded ACK/readback verification | BOUNDED ACK/READBACK + PRODUCER RESUME VERIFIED; full scale/recreate/exactly-once unverified |
+| Event identity/dedup | Raw batch has no stable event_id; no downstream dedup implementation | Declared 10-column business dedup, không thêm provenance ID | NOT IMPLEMENTED; LEGACY composite dedup is reference only |
 | Durable event history | Full October Raw CSV + Bronze Delta; no Silver or stream archive implementation | Preserve accepted source events independently of lossy features | FULL BRONZE READBACK PASS; [evidence](docs/evidence/spark_raw_to_bronze_evolution_full.json); Silver/stream archive NOT IMPLEMENTED |
 | 15m feature semantics | No Spark/Flink feature implementation | Four identical per-user windows with same event-time, boundary and late availability semantics | NOT IMPLEMENTED; LEGACY 30d/hopping-window mismatch |
-| Feature keys/timestamps | No feature producer; raw event_time retained | `(user_id,feature_timestamp)` plus separate creation/availability time | NOT IMPLEMENTED; LEGACY event_timestamp/created mappings only |
-| Offline and online stream writes | No Kafka/Feast stream pusher | Demonstrate offline and online paths with readback | NOT IMPLEMENTED; LEGACY pusher only |
-| Incremental materialize | No Feast materializer or Airflow DAG | Incremental offline-to-online for canonical feature view and stale-write policy | NOT IMPLEMENTED; LEGACY materializer only |
+| Feature keys/timestamps | No feature producer; raw event_time retained | `(user_id,feature_as_of)` và `created_timestamp` | NOT IMPLEMENTED; LEGACY event_timestamp/created mappings only |
+| Offline and online stream writes | No Flink/Feast stream writer | Flink offline history + Feast-compatible online sink, no feature topic/consumer | NOT IMPLEMENTED; LEGACY pusher only |
+| Incremental materialize | No Feast materializer or Airflow DAG | Incremental offline-to-online; sequential writer handover, không concurrent live materialization | NOT IMPLEMENTED; LEGACY materializer only |
 | Prediction log | No prediction service/log implementation | Future production only; outside current DE flow | NOT IMPLEMENTED |
-| Labels / dataset | No label job/table or Dataset Builder implementation | Both lanes: `(user_id,feature_timestamp)`, `[t,t+1h)`, finalized labels joined to matching feature snapshots | NOT IMPLEMENTED; see TARGET contracts above |
+| Labels / dataset | No label/table or Dataset Builder | October only: `(user_id,feature_as_of)`, coverage-valid labels | NOT IMPLEMENTED; stream labels deferred |
 | PostgreSQL mirror | No DDL/copy implementation or PostgreSQL service | Explicit documented mapping and reconciled readback | NOT IMPLEMENTED; LEGACY mappings only |
 | Rubric result | Batch Generator, Kafka and Spark Bronze evidence; later downstream absent | Evidence-backed criterion status | SMALL + FULL OCTOBER DECLARED-CHECKS PASS; see RUBRIC; ≥100 GB NOT VERIFIED |
 
@@ -273,18 +306,9 @@ flowchart LR
 
 In LEGACY source, the stream's raw-event staging branch declares preservation of event details for later history/reprocessing. The feature branch is a lossy aggregate for serving. Feast does not replace raw/clean event persistence, and raw event persistence does not replace time-indexed feature history. Spark and Flink must agree on feature meaning before their outputs can safely train/serve the same model.
 
-## Known contract gaps to resolve in implementation milestones
+## Known implementation gaps
 
-1. Batch Generator small and full October source MinIO readback PASS; ≥100 GB remains unverified. November Replay Producer/readback and Kafka Compose are present; bounded CLI replay/resume/readback đã verify; full scale/recreate/exactly-once unverified. See [Kafka evidence](docs/kafka_stream_replay.md). See [MinIO evidence](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06).
-2. Choose a stable event identity/dedup policy; LEGACY composite dedup can merge distinct events and LEGACY fact hash omits event type; no downstream dedup implementation exists on rebuild-clean.
-3. Align Spark historical and Flink realtime 15m feature definitions, timestamp field, watermark/late-data availability policy, and output keys.
-4. Sample cadence/eligibility and replay clock remain OPEN; event time alone cannot reconstruct historical arrival/availability. Future prediction triggering and feature-time alignment are outside current DE scope and unresolved.
-5. Implement October historical and November delayed labels keyed by `(user_id,feature_timestamp)`, using clean purchase events; define completeness/maturity and pending handling without depending on predictions.
-6. Implement and verify Feast offline/online push (requirements currently declare 0.38.0), incremental materialization, TTL/freshness, and stale-write behavior using an isolated fixture and readback.
-7. Define a mapping and reconciliation between Delta and PostgreSQL representations; never infer success from DDL or a DAG trigger.
-
-Other OPEN decisions (full event source, persistence, revisions, write/job mapping, access formats, retention/versioning and DAG boundaries) remain listed in [TARGET_ARCHITECTURE.md](TARGET_ARCHITECTURE.md); no choices are closed by this documentation sync.
-
+Cleaning, Gold, coverage, features/labels, timeline mapping, Flink and Feast are not implemented. Policies above are target decisions, not completed work. Native connector/version/format, TTL, recovery/partial failure and stream archive remain OPEN; canonical list in [architecture](TARGET_ARCHITECTURE.md#ngoài-baseline-và-open). Historical/LEGACY sections retain their original timestamps, fields and evidence limitations; they do not define the new baseline.
 
 ## Batch Generator complete-source mode — corrected injection, runtime verified
 

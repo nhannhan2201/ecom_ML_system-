@@ -13,7 +13,7 @@
 
 CURRENT ở bảng dưới là branch `rebuild-clean`. Các đường dẫn ghi **LEGACY old-vibe-backup** là tham chiếu lịch sử, không phải file hiện có hay evidence runtime của branch này.
 
-Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI K11 - MLE.xlsx, sheet de. Bỏ qua Novel Ideas. Các phần final/MLE sẽ xét sau luồng dữ liệu nền tảng.
+Nguồn: rubic/EDAI K11 - DE.xlsx, sheet edai-1 (50%); tương ứng rubic/EDAI K11 - MLE.xlsx, sheet de. Sheet hiển thị MLE `mle` tương ứng DE `edai-2 (50%)` cũng thuộc scope; sheet final ẩn không tự thêm. Novel Ideas là bonus backlog, không xóa khỏi tracking.
 
 Có code không có nghĩa đã implement đúng hoặc đã chạy. Không dùng kết quả cũ để quy điểm. Mỗi milestone sẽ cập nhật phần đã kiểm chứng, lệnh và kết quả thật. Offline generator yêu cầu tối thiểu 100GB; chưa có bằng chứng chạy lại ở scale đó. [Ghi nhận lịch sử small, artifacts evidence đã dọn](IMPLEMENTATION_ROADMAP.md#batch-generator--minio-raw-storage--2026-10-06) chỉ xác minh 137.333.941 bytes CSV, không đáp ứng ≥100 GB. Full October injected duplicate pairs/schema/date/count được đọc lại từ MinIO; natural duplicates/statistical skew chưa audit. Không dùng manifest/log đơn lẻ để nâng trạng thái.
 
@@ -57,3 +57,19 @@ Baseline model đã chốt dùng bốn feature 15 phút; rubric không bắt bu�
 | 36 | Documentation | Feature tables (feat_ tables) with event_timestamp and created | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `feature_store/features.py` |
 | 37 | Documentation | Relationship between dim & fact tables | 2.0 | Chưa implement trong rebuild-clean | Chưa kiểm chứng trên rebuild-clean | LEGACY old-vibe-backup: `src/spark/spark_optimized.py`, `scripts/setup_dwh_schemas.py` |
 | 38 | Documentation | Naming convention (raw_, stg_, dim_, fact_, feat_) | 2.0 | Một phần: raw batch; stg_/dim_/fact_/feat_ chưa implement trong rebuild-clean | Chưa kiểm chứng toàn bộ naming convention | [CURRENT implementation](CURRENT_IMPLEMENTATION.md); downstream chỉ có LEGACY old-vibe-backup |
+
+## MLE feature-store/E2E gate — chưa implement/runtime-verified
+
+Baseline mới không có Kafka Feature Topic/Feature Push Consumer. Hai outputs của cùng Flink job phải được readback riêng; sơ đồ không chứng minh stream push đã đạt. [Phase 9](IMPLEMENTATION_ROADMAP.md#phase-9--flink-features-và-direct-writes) và [Feast 0.38.0 source audit](DATA_CONTRACT.md#feast-0380--source-audit-và-write-invariants) định nghĩa gate, không phải runtime evidence.
+
+| Dòng MLE `mle` | Requirement / target mapping | Code và evidence status |
+| --- | --- | --- |
+| 11 | Incremental materialization offline→online; stop/drain handover trước Flink, không cạnh tranh same live view | Chưa implement/kiểm chứng; historical October timestamp không refresh thành hiện tại |
+| 12 | Stream feature jobs ghi OFFLINE và ONLINE: Flink history sink + Feast-compatible online sink | Chưa implement; retry/idempotency/fencing/checkpoint/partial failure và cả hai readbacks bắt buộc; direct write có blocker nếu gate fail |
+| 13 | Kubeflow ≥4 components load/split/train/evaluate | Chưa implement/kiểm chứng |
+| 14 | MLflow model/data/metadata và latest/production tags | Chưa implement/kiểm chứng |
+| 15 | KServe model-inside-image | Chưa implement/kiểm chứng |
+| 16–17 | FastAPI user features/prediction và chunk/agent deliverables; async | User baseline planned; chunk/agent backlog; chưa implement/kiểm chứng, không claim full criterion |
+| 36 | CI/CD cho offline/online streaming feature jobs | Planned cho cùng Flink artifact/two sinks; chưa implement/kiểm chứng |
+
+Các nhóm còn lại giữ trong [full-rubric gate](IMPLEMENTATION_ROADMAP.md#full-rubric-evidence-gate--chưa-đạt): MLE 2,55 docs; 3–10 LLM/RAG; 18–27 agents; 28–32 testing; 33–35 RAG/MCP/agent CI; 37–43 gateway/routes; 44–45 IaC; 46–49 observability; 50–51 LLM/agent metrics; 52–53 A/B; 54 secrets; 56–57 bonus. Chưa implement/kiểm chứng trong rebuild-clean. DE 2 documentation và 39–40 bonus còn cần evidence; không suy ra đạt từ tài liệu target. Review từng deliverable trước nâng trạng thái, không gộp backlog thành “DONE”.

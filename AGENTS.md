@@ -2,6 +2,8 @@
 
 This file explains how to maintain the project's documentation and verified progress. Follow the root [INDEX.md](INDEX.md) reading order and use [IMPLEMENTATION_ROADMAP.md](IMPLEMENTATION_ROADMAP.md) for the beginner-friendly, one-component-at-a-time learning process.
 
+Before editing code, read the canonical docs in [INDEX.md](INDEX.md) order, then the owning component note and current source/config/tests. Resume with [session handoff](docs/SESSION_HANDOFF.md); it summarizes and links decisions, never overrides canonical docs. Resolve CURRENT versus TARGET and OPEN gates before proposing a scoped change. Do not implement the next phase/component without learner approval.
+
 ## Code organization preference
 
 Prefer a small number of cohesive files. Extend the owning component, config, tests and component note before creating a parallel entrypoint or document. Split files only when an independent responsibility makes maintenance clearer; explain the reason first. Keep historical evidence unchanged. Keep tests beginner-readable and focused on data contracts, important failure cases and rubric requirements. Prefer small fixtures and clear names; avoid redundant cases or elaborate mocks without a concrete need.
@@ -38,3 +40,5 @@ Give the learner one short chance to predict an input/output or explain a code s
 ## Updating docs after a run or code change
 
 Update only the owning references: implementation changes can affect `CURRENT_IMPLEMENTATION.md` and `DATA_CONTRACT.md`; design decisions affect `TARGET_ARCHITECTURE.md`; a completed learning milestone updates `IMPLEMENTATION_ROADMAP.md`; newly satisfied rubric criteria update `RUBRIC.md`; reusable component explanations/evidence go in `docs/`. Then check links and `git diff --check`. Never mark a claim verified merely because the command was launched; require its actual result and, for external systems, a suitable readback.
+
+After every milestone, update only the canonical owners affected, record exact checks/results and remaining uncertainty in the roadmap, and refresh the handoff if the next step or decisions changed. Check Markdown links and `git diff --check`; preserve historical evidence and never duplicate the architecture in AGENTS or the handoff.

@@ -2,9 +2,11 @@
 
 An e-commerce event data-engineering coursework project using REES46 data, Kafka, Flink, Spark, a MinIO/Delta Lakehouse, PostgreSQL, Feast/Redis, Airflow and DataHub. The repository contains code for parts of this system; source inspection alone does not establish that a pipeline ran successfully. Novel Ideas rubric items remain optional/bonus backlog in the current learning plan.
 
-The agreed model baseline predicts whether a user will purchase in the hour after a decision time using four event-time features over the preceding 15 minutes. The old 30-day batch feature path and candidate-minute label code were removed from the rebuild baseline. Read the current-versus-target distinction before treating these paths as equivalent.
+The agreed model baseline predicts whether a user will purchase in the hour after the feature snapshot time using four event-time features over the preceding 15 minutes. The old 30-day batch feature path and candidate-minute label code were removed from the rebuild baseline. Read the current-versus-target distinction before treating these paths as equivalent.
 
 ## Start here
+
+Session mới: [handoff ngắn](docs/SESSION_HANDOFF.md). Target E2E giữ October Medallion → Features/Labels → Kubeflow/MLflow → KServe; November timeline 1× → Kafka behavior → Flink → offline history + Feast-compatible Redis → FastAPI → KServe. Không feature topic/consumer riêng; direct-write recovery còn OPEN.
 
 Read the [project documentation map](INDEX.md) in order. The central references are:
 
